@@ -33,7 +33,7 @@ theme_update(axis.text.x = element_text(size = 13),
                                          face = "bold"))
 )
 
-if (!file.exists()) {
+if (!file.exists("VL_cleaned.Rds")) {
 ## VL data, District mapping data, and a matching of the district names
 mun        <- readRDS("Brazil_map.rds")
 VL         <- readRDS("prelim_vl_data.rds")
