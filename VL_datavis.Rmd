@@ -70,7 +70,12 @@ saveRDS(
   , "VL_cleaned.Rds") 
 
 } else {
-all.data <- readRDS("VL_cleaned.Rds")
+all.data  <- readRDS("VL_cleaned.Rds")
+VL        <- all.data[[1]]
+mun.all   <- all.data[[2]]
+mun.month <- all.data[[3]]
+mun.year  <- all.data[[4]]
+rm(all.data)
 }
 
 ```
@@ -78,6 +83,8 @@ all.data <- readRDS("VL_cleaned.Rds")
 ## First pass visualizations of VL cases in Brazil
 
 #### Check distribution, look for weird outliers
+
+The numbers in the upper right of each panel show the total number of cases
 
 ```{r, fig.width = 9, fig.height = 9, out.width = "100%"}
 VL %>% {
@@ -146,6 +153,36 @@ VL %>%
   }
 ```
 
+Look at both month and year trends simultaneously in a heatmap to look for both year and month trends spatially
+
+```{r, fig.width = 9, fig.height = 9, out.width = "100%"}
+# rand_locs <- unique(VL$munip_name) %>% sample(., 10)
+rand_locs <- VL %>% group_by(munip_name) %>% summarize(tot_cases = sum(vl_cases)) %>% 
+  arrange(desc(tot_cases)) %>% head(9) %>% dplyr::select(munip_name) %>% unname() %>% unlist()
+
+VL %>% filter(munip_name %in% rand_locs[c(1:6, 8:9)]) %>% {
+    ggplot(., aes(as.numeric(year), as.numeric(month))) +
+    geom_tile(aes(fill = vl_cases), colour = "white") +
+    scale_fill_gradient(low = "grey95", high = "#4472C4"
+      , name = "VL Cases") +
+    scale_y_reverse(
+        breaks = seq(1, 12)
+      , labels = c("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug","Sep", "Oct", "Nov", "Dec")
+      ) + xlab("Year") + ylab("Month") +
+    facet_wrap(~munip_name)
+  }
+
+```
+
+```{r, fig.width = 9, fig.height = 9, out.width = "100%"}
+mun.all %>% mutate(munip_highlight = ifelse(munip_name %in% rand_locs, 1, 0)) %>% {
+  ggplot(.) + 
+  geom_sf(aes(fill  =munip_highlight), color = "#FEBF57", size = 0) +
+  scale_fill_gradient(low = "slategray3", high = "firebrick1", name = "Total
+Cases") + guides(fill = FALSE)
+}
+```
+
 #### Over space
 
 Total cases between 2007 and 2018 by municipality
@@ -185,12 +222,28 @@ Cases") + facet_wrap(~month) +
 #### Coarse correlations between predictors and cases
 
 Total Precipitation, each data point is the number of VL cases in a given month, year, and municipality
+
 ```{r, fig.width = 9, fig.height = 9, out.width = "100%"}
 
 VL %>% {
   ggplot(., aes(total_precipitation, vl_cases)) + 
     geom_point(lwd = 2, alpha = 0.5) +
     xlab("Total Precipitation") + ylab("VL Cases (Month)")
+}
+
+```
+
+Broken down by municipality to look for variation in the effects of the predictor over space
+
+```{r, fig.width = 9, fig.height = 9, out.width = "100%"}
+rand_locs <- VL %>% group_by(munip_name) %>% summarize(tot_cases = sum(vl_cases)) %>% 
+  arrange(desc(tot_cases)) %>% head(20) %>% dplyr::select(munip_name) %>% unname() %>% unlist()
+
+VL %>% filter(munip_name %in% rand_locs) %>% {
+  ggplot(., aes(total_precipitation, vl_cases)) + 
+    geom_point(lwd = 2, alpha = 0.5) +
+    xlab("Total Precipitation") + ylab("VL Cases (Month)") +
+    facet_wrap(~munip_name)
 }
 
 ```
@@ -229,4 +282,80 @@ VL %>% {
 }
 
 ```
+
+Broken down by municipality to look for variation in the effects of the predictor over space
+
+```{r, fig.width = 9, fig.height = 9, out.width = "100%"}
+rand_locs <- VL %>% group_by(munip_name) %>% summarize(tot_cases = sum(vl_cases)) %>% 
+  arrange(desc(tot_cases)) %>% head(20) %>% dplyr::select(munip_name) %>% unname() %>% unlist()
+
+VL %>% filter(munip_name %in% rand_locs) %>% {
+  ggplot(., aes(mean_air_temp, vl_cases)) + 
+    geom_point(lwd = 2, alpha = 0.5) +
+    xlab("Mean Air Temp") + ylab("VL Cases (Month)") +
+    facet_wrap(~munip_name)
+}
+
+```
+
+```{r, fig.width = 9, fig.height = 9, out.width = "100%"}
+VL %>% filter(munip_name %in% rand_locs) %>% {
+  ggplot(., aes(month, mean_air_temp)) + 
+    geom_point(lwd = 2, alpha = 0.5) +
+    xlab("Month") + ylab("Mean Air Temp") +
+    facet_wrap(~munip_name)
+}
+
+```
+
+```{r, fig.width = 9, fig.height = 9, out.width = "100%"}
+VL %>% filter(munip_name %in% rand_locs) %>% {
+  ggplot(., aes(month, vl_cases)) + 
+    geom_point(lwd = 2, alpha = 0.5) +
+    xlab("Month") + ylab("VL Cases") +
+    facet_wrap(~munip_name)
+}
+
+```
+
+GDP over time and correlation to cases
+
+```{r, fig.width = 9, fig.height = 9, out.width = "100%"}
+rand_locs <- VL %>% group_by(munip_name) %>% summarize(tot_cases = sum(vl_cases)) %>% 
+  arrange(desc(tot_cases)) %>% head(20) %>% dplyr::select(munip_name) %>% unname() %>% unlist()
+
+VL %>% {
+  ggplot(., aes(log10(GDP_1000s_R), vl_cases)) + 
+    geom_point(lwd = 2, alpha = 0.5) +
+    xlab("GDP") + ylab("VL Cases (Month)")
+}
+
+```
+
+```{r, fig.width = 9, fig.height = 9, out.width = "100%"}
+VL %>% filter(munip_name %in% rand_locs) %>% {
+  ggplot(., aes(year, log10(GDP_1000s_R))) + 
+    geom_point(lwd = 2, alpha = 0.5) +
+    xlab("Year") + ylab("GDP") +
+    facet_wrap(~munip_name)
+}
+```
+
+```{r, fig.width = 9, fig.height = 9, out.width = "100%"}
+VL %>% filter(munip_name %in% rand_locs) %>% {
+  ggplot(., aes(year, vl_cases)) + 
+    geom_point(lwd = 2, alpha = 0.5) +
+    xlab("Year") + ylab("VL Cases") +
+    theme(axis.text.x     = element_text(angle = 300, hjust = 0, colour = "grey50", size = 9)) +
+    facet_wrap(~munip_name)
+}
+```
+
+### Some notes:
+ 
+##### In most municipalities seasonality is minimal
+##### In most municipalities there is relatively little trend over years (some are decreasing, some are increasing?)
+##### Is there a discernable pattern in cases over space over years (e.g., movement westward or...)?
+##### Is there a discernable pattern in cases over months across space?
+##### If using a random effect framework, how much goes into the random effects? (1 | munip) or much more (1 + year + beta | munip) ?
 
