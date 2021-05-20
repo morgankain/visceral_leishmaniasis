@@ -1,5 +1,6 @@
-## packages
-
+####
+## Packages
+####
 needed_packages <- c(
   "tidyr"
 , "dplyr"
@@ -18,24 +19,43 @@ needed_packages <- c(
 , "glmmTMB"
 )
 
+## If TRUE install all missing packages, otherwise print the packages that are missing
+if (inst_miss_pack) {
+
+if (length(setdiff(needed_packages, rownames(installed.packages()))) > 0) {
+  install.packages(setdiff(needed_packages, rownames(installed.packages())))  
+}
+
+lapply(needed_packages, require, character.only = TRUE)
+
+} else {
+
 print(
 data.frame(
            needed_packages
 , loaded = unlist(lapply(needed_packages, require, character.only = TRUE))
 )
 )
+  
+}
 
 source("ggplot_theme.R")
 
-## functions
+####
+## Functions
+####
 `%notin%` <- Negate(`%in%`)
 
-## data
+####
+## Data
+####
 
-if (!file.exists("VL_cleaned2.Rds")) {
+## A previously cleaned data file has been saved. But if for some reason it isn't present, it can
+ ## be recreated from the raw data
+if (!file.exists("VL_cleaned.Rds")) {
 ## VL data, District mapping data, and a matching of the district names
 mun        <- readRDS("Brazil_map.rds")
-VL         <- readRDS("prelim_vl_data2.rds")
+VL         <- readRDS("prelim_vl_data.rds")
 name_match <- read.csv("match_names.csv")
 
 map_names <- strsplit(as.character(unique(mun$name_muni)), " ") %>% 
@@ -66,10 +86,10 @@ VL <- VL %>% left_join(., pop_size)
 
 saveRDS(
     list(VL = VL, mun.all = mun.all, mun.month = mun.month, mun.year = mun.year)
-  , "VL_cleaned2.Rds") 
+  , "VL_cleaned.Rds") 
 
 } else {
-all.data  <- readRDS("VL_cleaned2.Rds")
+all.data  <- readRDS("VL_cleaned.Rds")
 VL        <- all.data[[1]]
 mun.all   <- all.data[[2]]
 mun.month <- all.data[[3]]

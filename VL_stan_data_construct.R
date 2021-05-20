@@ -1,5 +1,5 @@
 ####
-## Prep the data for the STAN model
+## Prep the data for the first set of Stan models using the same predictors
 ####
 
 ## Lots of covariates. First take a look at them:
@@ -36,10 +36,10 @@ VL.year <- VL %>% group_by(munip_name, year) %>%
   , mean_pop    = mean(log10(human_pop))
   , mean_GDP    = mean(log10(GDP_1000s_R))
     ) %>% filter(munip_name != "") %>%
-  mutate(year = as.numeric(year))
+  mutate(mean_year = as.numeric(year))
 
 ## Cant have NA's so drop all of those
-VL.year <- VL.year %>% drop_na()
+VL.year <- VL.year %>% drop_na() %>% ungroup()
 
 ## If debugging run the model with only a few locations
 if (debug.stan.model) {
@@ -52,21 +52,38 @@ rand_locs <- VL %>% group_by(munip_name) %>% summarize(tot_cases = sum(vl_cases)
  
 rand_locs <- c(rand_locs, top_locs)
 
-VL.stan <- VL.year %>% filter(munip_name %in% rand_locs)
+VL.year <- VL.year %>% filter(munip_name %in% rand_locs)
 
-all_locs_cases <- VL.stan %>% {
-  ggplot(., aes(year, vl_cases)) + geom_point(lwd = 2) + facet_wrap(~munip_name) +
-    xlab("Year") + ylab("Total VL cases")
-}
 }
 
-stan.data   <- list(
+VL.stan <- VL.year %>% mutate(
+    year   = c(scale(mean_year, scale = F))
+  , precip = c(scale(mean_precip, scale = F))
+  , temp   = c(scale(mean_temp, scale = F))
+  , pop    = c(scale(mean_pop, scale = F))
+  , gdp    = c(scale(mean_GDP, scale = F)))
+
+## Stan data requires a list
+stan.data   <- with(
+    VL.stan
+  , list(
   N              = nrow(VL.stan)
-, y              = VL.stan$vl_cases
-, N_loc          = length(unique(VL.stan$munip_name))
-, loc_id         = as.numeric(as.factor(VL.stan$munip_name))
-, temp           = VL.stan$mean_temp
-, precip         = VL.stan$mean_precip
-, year           = c(scale(VL.stan$year, scale = FALSE))
-, offset         = VL.stan$mean_pop
-  )
+, y              = vl_cases
+, N_loc          = length(unique(munip_name))
+, loc_id         = as.numeric(as.factor(munip_name))
+, temp           = temp
+, precip         = precip
+, year           = year
+, pop            = pop
+  ))
+
+## Also set up a data frame for the Frequentist comparisons for the simple models
+lme4.data <- VL.year %>% 
+  filter(munip_name %in% rand_locs) %>% 
+  ungroup() %>% 
+  mutate(
+    year   = c(scale(mean_year, scale = F))
+  , precip = c(scale(mean_precip, scale = F))
+  , temp   = c(scale(mean_temp, scale = F))
+  , pop    = c(scale(mean_pop, scale = F))
+  , gdp    = c(scale(mean_GDP, scale = F)))

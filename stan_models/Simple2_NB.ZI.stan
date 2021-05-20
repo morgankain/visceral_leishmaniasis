@@ -11,7 +11,7 @@ data {
   vector[N] temp;                    // temperature
   vector[N] precip;                  // precipitation
   vector[N] year;                    // year
-  vector[N] offset;                  // population size offset
+//vector[N] offset;                  // population size offset
 
 }
 
@@ -29,7 +29,7 @@ parameters {
   real year_lambda_bar;  
 
   // Variance/Dispersion
-  real<lower=0> reciprocal_phi;
+  real<lower=0, upper=100> reciprocal_phi;
 
   // Random Effects, Non-Centered Parameterization, see Section 21.7 in the Stan Users Guide
 
@@ -46,10 +46,10 @@ transformed parameters {
   real alpha_lambda[N_loc];             // location-specific intercepts for counts
   real year_lambda[N_loc];              // location-specific slope over year for count
 
-  real<lower=0, upper=1> theta[N];      // linear predictor for probability piece
+  real<lower=0, upper=1> theta;         // linear predictor for probability piece
   real lambda_log[N];                   // linear predictor for count piece
 
-  real<lower=0> phi;                    // dispersion
+  real phi;                             // dispersion
 
 for (i in 1:N_loc) {
 
@@ -63,13 +63,11 @@ for (j in 1:N) {
   lambda_log[j] = alpha_lambda[loc_id[j]] + 
     temp_lambda_bar * temp[j] +
     precip_lambda_bar * precip[j] +
-    year_lambda[loc_id[j]] * year[j] + 
-    offset[j]; 
-
-  theta[j]      = inv_logit(alpha_theta_bar);
+    year_lambda[loc_id[j]] * year[j]; 
 
 }
 
+  theta = inv_logit(alpha_theta_bar);
   phi = 1. / reciprocal_phi;
 
 }
@@ -80,42 +78,56 @@ model {
 
 // fixed effects
    alpha_theta_bar ~ normal(0, 3);
-
    alpha_lambda_bar ~ normal(0, 3);
+
    temp_lambda_bar ~ normal(0, 3);
    year_lambda_bar ~ normal(0, 3);
+   precip_lambda_bar ~ normal(0, 3);
 
 // random effects
-   sigma_alpha_lambda ~ cauchy(0, 5);
-   sigma_year_lambda ~ cauchy(0, 5);
+   sigma_alpha_lambda ~ inv_gamma(1, 1);
+   sigma_year_lambda ~ inv_gamma(1, 1);
 
    eps_alpha_lambda ~ normal(0, 1);
    eps_year_lambda ~ normal(0, 1);
 
-   reciprocal_phi ~ cauchy(0., 5);
+   reciprocal_phi ~ inv_gamma(1, 1);
 
 // modify the likelihood
    for(n in 1:N) {
     
 if (y[n] == 0) {
      
-      target += log_sum_exp(bernoulli_lpmf(1 | theta[n]),                 
-                             bernoulli_lpmf(0 | theta[n])
+      target += log_sum_exp(bernoulli_lpmf(1 | theta),                 
+                             bernoulli_lpmf(0 | theta)
                            + neg_binomial_2_log_lpmf(y[n] | lambda_log[n], phi));
 
 
     } else {
 
-      target += bernoulli_lpmf(0 | theta[n])                              
+      target += bernoulli_lpmf(0 | theta)                              
                   + neg_binomial_2_log_lpmf(y[n] | lambda_log[n], phi);
 
     }
   }
 }
 
-generated quantities{
+generated quantities {
 
 // for simulating values
+
+ int<lower=0> y_sim[N];
+ int zero_pred;
+ real mu[N];
+
+ mu = exp(lambda_log);
+
+ for(n in 1:N) {
+
+  zero_pred    = bernoulli_rng(theta); 
+  y_sim[n]     = (1 - zero_pred) * neg_binomial_2_rng(mu[n], phi);
+
+  }
 
 }
 

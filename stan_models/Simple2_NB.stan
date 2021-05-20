@@ -10,60 +10,58 @@ data {
   vector[N] temp;                    // temperature
   vector[N] precip;                  // precipitation
   vector[N] year;                    // year
-  vector[N] offset;                  // population size offset
+  vector[N] pop;                     // population size
 
-}
+ }
+
 
 parameters {
 
   real alpha_lambda_bar;                 // intercept for count piece  
   real temp_lambda_bar;                  // slope coefficients for probability piece
   real precip_lambda_bar;       
-  real year_lambda_bar;      
+  real year_lambda_bar;   
+  real pop_lambda_bar;   
+
+  real<lower=0> reciprocal_phi;
 
 // random effect structure  
+
   real<lower=0> sigma_alpha_lambda;      // estimated variation among locations in the intercept (count)
   vector[N_loc] eps_alpha_lambda;        // deviates for each place drawn from sigma_alpha (count)
 
-//  real<lower=0> sigma_temp_lambda;     // estimated variation among locations in slopes (count)
-//  real<lower=0> sigma_precip_lambda;     
-
-//  vector[N_loc] eps_temp_lambda;       // deviates for each place drawn from the sigma_beta values (count)
-//  vector[N_loc] eps_precip_lambda;
+  real<lower=0> sigma_year_lambda;       // estimated variation among locations in slopes (count)
+  vector[N_loc] eps_year_lambda;         // deviates for each place drawn from the sigma_beta values (count)
 
 }
 
 transformed parameters {
 
-  real lambda_log[N];                  // linear predictor for count piece
-  real <lower=0> mu[N];
+  real lambda_log[N];                   // linear predictor for count piece
 
-  real alpha_lambda[N_loc];            // location-specific intercepts for counts
-//  real temp_lambda[N_loc];
-//  real precip_lambda[N_loc];
+  real alpha_lambda[N_loc];             // location-specific intercepts for counts
+  real year_lambda[N_loc];
+
+  real<lower=0> phi;                    // dispersion
 
 for (i in 1:N_loc) {
 
   alpha_lambda[i] = alpha_lambda_bar + sigma_alpha_lambda * eps_alpha_lambda[i];
-//  temp_lambda[i] = temp_lambda_bar + sigma_temp_lambda * eps_temp_lambda[i];
-//  precip_lambda[i] = precip_lambda_bar + sigma_precip_lambda * eps_precip_lambda[i];
+  year_lambda[i] = year_lambda_bar + sigma_year_lambda * eps_year_lambda[i];
 
 }    
-
 
 for (j in 1:N) {
 
   lambda_log[j] = alpha_lambda[loc_id[j]] + 
- //   temp_lambda[loc_id[j]] * temp[j] + 
- //   precip_lambda[loc_id[j]] * precip[j] + 
     temp_lambda_bar * temp[j] +
     precip_lambda_bar * precip[j] +
-    year_lambda_bar * year[j] + 
-    offset[j]; 
-
-  mu[j] = exp(lambda_log[j]);
+    year_lambda[loc_id[j]] * year[j] +
+    pop_lambda_bar * pop[j];
 
 }
+
+  phi = 1. / reciprocal_phi;
 
 }
 
@@ -74,23 +72,23 @@ model {
 // fixed effects
    alpha_lambda_bar ~ normal(0, 3);
    temp_lambda_bar ~ normal(0, 3);
-   precip_lambda_bar ~ normal(0, 3);
    year_lambda_bar ~ normal(0, 3);
+   precip_lambda_bar ~ normal(0, 3);
+   pop_lambda_bar ~ normal(0, 3);
 
 // random effects
    sigma_alpha_lambda ~ cauchy(0, 5);
-//   sigma_temp_lambda ~ cauchy(0, 2);
-//   sigma_precip_lambda ~ cauchy(0, 2);
+   sigma_year_lambda ~ cauchy(0, 5);
 
    eps_alpha_lambda ~ normal(0, 1);
-//   eps_temp_lambda ~ normal(0, 1);
-//   eps_precip_lambda ~ normal(0, 1);
+   eps_year_lambda ~ normal(0, 1);
+
+   reciprocal_phi ~ cauchy(0., 5);
 
 // modify the likelihood
    for(n in 1:N) {
          
-  //  target += poisson(mu[n]);
-      target += poisson_lpmf(y[n] | mu[n]);
+   target += neg_binomial_2_log_lpmf(y[n] | lambda_log[n], phi);
 
 }
 

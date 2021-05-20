@@ -1,84 +1,128 @@
-####
-## Bayesian model fit to VL data with the aim of both parameter estimates and forecasting
-####
+##############################################################################################################
+## Bayesian model fit to VL data with the aim of both parameter estimates and forecasting (forward in time) ##
+##############################################################################################################
 
-### Model questions to keep in mind:
- ## 1) Will we assume perfect detection?
- ## 2) Which predictors go into the zero-inflated part and which go into the count part?
- ## 3) How are we going to define the zero-inflation piece. 
-# -- For example, either a zero-inflated Poisson or a zero-inflated negative binomial likely could fit, but the 
-#    coefficient on the zero inflated piece will differ in magnitude. If we want to try and put a biological
-#    description to the zero inflated piece (e.g., suitability) vs count piece what we assume about the count
-#    distribution will matter about the inference on the (e.g., suitability) piece. This feels as much of 
-#    a philosophical question as a fitting question
-# -- If we expect some places to just be poorly set up for VL, can we take care of this with some random
+####
+## Model questions to keep in mind:
+####
+ ## 1) Assume perfect detection?
+ ## 2) How should the zero-inflation piece be defined?
+# -- For example, either a zero-inflated Poisson or a zero-inflated Negative Binomial likely could fit, but the 
+#    coefficient on the zero inflated piece will differ in magnitude depending on the option. 
+#    Conceivably some classic measure of statistical fit could be used to compare (wAIC or w/e).
+#    But, there may be just as much of an important a priori biological choice for inference about 
+#    suitability (zero inflated piece) vs rarity (suitable but zero in the count piece)
+ ## 3) Which predictors go into the zero-inflated part and which go into the count part?
+# -- If we expect some places to be poorly set up for VL, can we take care of this with some random
 #    effects structure in the probability piece?
- ## 3) How do we deal with month? GAM? some form of sin( ) or cos( )?
- ## 4) What random effects can we conceivably fit and which ones are necessary?
- ## 5) For forecasting how will we define uncertainty in our predictors (e.g., temp, population, or tree cover)?
- ## 6) What is the plan to translate sandfly counts into a predictor for the model? Interpolation?
- ## 7) With so many potential predictors, which ones do we actually want?
+ ## 4) Focus on patterns over years or over months?
+# -- If over months how to deal with the wigglyness over month? GAM? some form of sin( ) or cos( )?
+ ## 5) With so many potential predictors, which ones do we actually want?
 # -- What functional forms do we want on the predictors that we decide to include?
+# -- What random effects can we conceivably fit and which ones are necessary?
+# -- What is the plan to translate sandfly counts into a predictor for the model? Interpolation?
+ ## 6) For forecasting how will we define uncertainty in our predictors (e.g., temp, population, or tree cover)?
 
-### Next steps
- ## 1) Rewrite the zero-inflated model to a vectorized form.
-# -- Fit the model both ways and make sure the predictions are identical
- ## 2) Fit both a zero-inflated Poisson and a zero-inflated NB to a slightly larger data set
-# -- Produce CI on coefficients and CI on predictions
-# -- Create a few prediction and diagnostic plots
- ## 3) Clean up the scripts with printing and help for a new user
- ## 4) Get the zero-inflated model fitting with slopes in the zero-inflated piece
- ## 5) Add landscape predictors to the model 
- ## 6) Use non-linear functional forms for temp and a few other predictors.
+####
+## Next steps
+####
+ ## 1) Get the zero-inflated model fitting with slopes in the zero-inflated piece
+ ## 2) Use non-linear functional forms for temp and a few other predictors
 # -- Potentially play with GAMs
- ## 7) Set up the predicted quantities block for out-of-sample predictions
- ## 8) Fit a model for a large data set
+ ## 3) Expand the set of predictors considered in the model 
+ ## 4) Fit a model for a large data set
  
+####
+## Notes
+####
+## 1) In theory the modeling process could be automated so that the desired covariates could be 
+ ## designated out front and the covariate matrix built by extracting these named predictors
+## HOWEVER: the model then needs to be written in a much more opaque way, reducing the ease of interpretation
+ ## This may be a more viable strategy long term (as it is a pain in the current form to add predictors)
+  ## but for now keeping a more labor intensive version of the model that has named coefficients
+
 ####
 ## Prep the data and predictors
 ####
-debug.stan.model <- TRUE  ## Run a small sample model for debugging purposes
-deubg.top_samps  <- 20    ## Include the top X municipalities by cases 
-debug.ran_samps  <- 100   ## Include Y random municipalities
-set.seed(10003)
+## Run a small sample model for debugging purposes? 
+debug.stan.model <- TRUE  
+## If TRUE:
+deubg.top_samps  <- 30    ## Include the top X municipalities by cases 
+debug.ran_samps  <- 50    ## Include Y random municipalities
+set.seed(10003)           ## Set a seed to pick these random municipalities for reproducibility
 
 ####
 ## Load packages, functions, and data
 ####
-source("packages_functions.R")
-
-## Note: In theory the modeling process could be automated so that the desired covariates could be designated out front
- ## and the covariate matrix built by extracting these named predictors. 
-  ## However: the stan model then needs to be written in a much more opaque way, reducing the ease of interpretation
-   ## This will maybe be the strategy long term, but for now keeping a more labor entinsive version of a stan model that
-    ## has named coefficients
-
-print.predictors <- TRUE ## If true, produce histograms of the predictors
-
-source("VL_stan_data.R")
+inst_miss_pack <- FALSE         ## Bulk install all needed missing packages (TRUE) or just print those not installed (FALSE)
+source("packages_functions.R")  ## Load packages, helper functions, and data
 
 ## MCMC settings
-ni <- 2000
-nt <- 1
-nb <- 1000
-nc <- 1
+ni <- 1500   ## number of iterations per chain
+nt <- 1      ## thinning (1 = keep all samples)
+nb <- 500    ## burn-in (number of initial samples to throw out)
+nc <- 1      ## number of chains (3 or 4 is usually sensible, 1 is ok for quick debugging)
 
-## Building the model up from from the very basics ## 
+####
+## Building the model up from from the very basics
+####
 
+## Each subsequent grouping incorporates all of the material from the previous steps
+
+## The first three sets will be run through # source("VL_stan_construct.R")
+ ## Pick the name and run that source
+
+## This first set of models (non-zero inflated) also fit Frequentist models with canned packages to compare predictions 
 # "Simple_Poisson"     -- Random intercept only model
 # "Simple2_Poisson"    -- Random slope model (in one covariate)
 # "Simple2_NB"         -- Random slope model with Negative Binomial distribution
+
+## The second set fit simple zero-inflated models. 
+## These also start incorporating generated quantities to compare predicted values ##
 # "Simple2_Poisson.ZI" -- Random slope model but with a Zero-Inflated Negative Binomial distribution
 # "Simple2_NB.ZI"      -- Random slope model but with a Zero-Inflated Negative Binomial distribution
 #                         -- No predictors yet in the zero-inflated piece of the model
 #                         -- Random slopes only in the count distribution                 
-# "Simple3_NB.ZI"      -- Simple2_NB.ZI with slopes in the probability piece
-# "Simple4_NB.ZI"      -- Simple3_NB.ZI with random intercepts in the probability piece
 
-stan.model_which <- "Simple2_NB.ZI"
+## Third set includes out-of-sample predictions in two ways
+## A location not included in the fitted model (first). Expected to perform only ok because of the random effect of location
+## Two years for locations that are included in the model (second). Expected to perform better than ^^ because these locations have
+## their conditional mode estimated
+# "Simple2_NB.ZI.OoS.S" -- Out of sample over space
+# "Simple2_NB.ZI.OoS.T" -- Out of sample over time
+
+stan.model_which <- "Simple2_NB.ZI.OoS.T"
+
+print.predictors <- FALSE          ## If true, produce histograms of the predictors
+## Set up the data into the structure needed for the stan model for these models working on building the structure
+source("VL_stan_data_construct.R") 
 
 ## Run the chosen model
-source("VL_stan_run.R")
+source("VL_stan_construct.R")
 
-## Take a look at the model diagnostics with the nifty shinystan
-launch_shinystan(stan.fit)
+## The fourth through sixth sets that really start pulling the model together will be run through # source("VL_stan_finalize.R")
+ ## Pick the name and run that source
+
+## Fourth set explores adding predictors to the zero-inflated section of the model
+## and starts to explore quadratic terms as well
+## These keep the out-of-sample predictions for the last two years from "Simple2_NB.ZI.OoS.T" above
+# "Simple3_NB.ZI"      -- Simple2_NB.ZI with a slope in the probability piece and quadratic term to temperature 
+# "Simple4_NB.ZI"      -- Simple3_NB.ZI with random intercepts in the probability piece
+
+## Fifth set starts exploring more robust functional forms for the predictors and adding many predictors
+# "NB.ZI.f1"            -- Starts adding a series of other predictors
+
+## Sixth set are _hypothetically_ complete models
+# "NB.ZI.C1"            -- Lots of predictors, sensible functional forms etc. 
+
+stan.model_which <- "Simple3_NB.ZI"
+
+## Set up the data into the structure needed for these stan models. The data required will start to vary a lot for these
+ ## models so using a new data script
+source("VL_stan_data_finalize.R") 
+
+## Run the chosen model
+source("VL_stan_finalize.R")
+
+## Take a look at the model diagnostics with the nifty shinystan GUI
+# launch_shinystan(stan.fit)
