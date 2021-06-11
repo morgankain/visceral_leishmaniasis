@@ -10,10 +10,13 @@ data {
   // ** In sample covariates ** 
   vector[N] temp;                      // temperature
   vector[N] precip;                    // precipitation
-  vector[N] year;                      // year
   vector[N] pop;                       // population
   vector[N] gdp;                       // gdp
-
+  vector[N] area;                      // area
+  vector[N] ag;                        // ag
+  vector[N] ndvi;                      // ndvi
+  vector[N] year;                      // year
+  
   // ** Out of Sample bookkeeping
   int<lower=0> N_out;                  // number of observations for out of sample predictions
   int<lower=0> N_loc_out;	       // number of locations where counts are repeated (for the random effect) for out of sample predictions
@@ -22,9 +25,12 @@ data {
   // ** Out of Sample covariates
   vector[N_out] temp_out;              // temperature
   vector[N_out] precip_out;            // precipitation
-  vector[N_out] year_out;              // year
   vector[N_out] pop_out;               // population
   vector[N_out] gdp_out;               // gdp
+  vector[N_out] area_out;              // area
+  vector[N_out] ag_out;                // ag
+  vector[N_out] ndvi_out;              // ndvi
+  vector[N_out] year_out;              // year
 
 }
 
@@ -43,9 +49,12 @@ parameters {
 
   // ** count piece **
   real temp_lambda_bar;               
-  real precip_lambda_bar;       
-  real year_lambda_bar;  
+  real precip_lambda_bar;         
   real pop_lambda_bar;
+  real area_lambda_bar;
+  real ag_lambda_bar;
+  real ndvi_lambda_bar;
+  real year_lambda_bar;
 
   // ** Slopes (higher order terms) **
 
@@ -111,15 +120,17 @@ for (j in 1:N) {
     temp_lambda_bar * temp[j] +
     temp_lambda_bar_sq * square(temp[j]) +
     precip_lambda_bar * precip[j] +
-    year_lambda[loc_id[j]] * year[j] +
-    pop_lambda_bar * pop[j];  
+    pop_lambda_bar * pop[j] +
+    area_lambda_bar * area[j] +
+    ag_lambda_bar * ag[j] +
+    ndvi_lambda_bar * ndvi[j] +
+    year_lambda[loc_id[j]] * year[j];  
 
   inv_theta[j] = alpha_theta[loc_id[j]] + gdp_theta_bar * gdp[j];
 
 }
 
   theta = inv_logit(inv_theta);
-  theta_out = inv_logit(inv_theta_out);
 
   // ** out of sample (predicting) ** 
 
@@ -129,12 +140,17 @@ for (jj in 1:N_out) {
     temp_lambda_bar * temp_out[jj] +
     temp_lambda_bar_sq * square(temp_out[jj]) +
     precip_lambda_bar * precip_out[jj] +
-    year_lambda[loc_id_out[jj]] * year_out[jj] +
-    pop_lambda_bar * pop_out[jj]; 
+    pop_lambda_bar * pop_out[jj] +
+    area_lambda_bar * area_out[jj] +
+    ag_lambda_bar * ag_out[jj] +
+    ndvi_lambda_bar * ndvi_out[jj] +
+    year_lambda[loc_id_out[jj]] * year_out[jj]; 
 
   inv_theta_out[jj] = alpha_theta[loc_id_out[jj]] + gdp_theta_bar * gdp_out[jj];
 
 }
+
+  theta_out = inv_logit(inv_theta_out);
 
   phi = 1. / reciprocal_phi;
 
@@ -151,9 +167,12 @@ model {
    alpha_lambda_bar ~ normal(0, 3);
 
    temp_lambda_bar ~ normal(0, 3);
-   year_lambda_bar ~ normal(0, 3);
    precip_lambda_bar ~ normal(0, 3);
    pop_lambda_bar ~ normal(0, 3);
+   area_lambda_bar ~ normal(0, 3);
+   ag_lambda_bar ~ normal(0, 3);
+   ndvi_lambda_bar ~ normal(0, 3);
+   year_lambda_bar ~ normal(0, 3);
 
    temp_lambda_bar_sq ~ normal(0, 3);
 

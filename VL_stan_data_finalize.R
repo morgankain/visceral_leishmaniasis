@@ -61,9 +61,10 @@ VL.stan.in <- VL.year.in %>% mutate(
   , year   = c(scale(mean_year  , scale = F))
   )
 
-if (stan.model_which == "Simple3_NB.ZI") {
-
 ## Data for fitting
+
+if (stan.model_which != "NB.ZI.C2") {
+
 stan.data   <- with(
     VL.stan.in
   , list(
@@ -97,5 +98,40 @@ stan.data <- c(
 , year_out       = list(c(VL.year.out$mean_year   - mean(VL.stan.in$mean_year)))
 )
 
-} 
+} else {
+  
+stan.data   <- with(
+    VL.stan.in
+  , list(
+  N              = nrow(VL.stan.in)
+, y              = vl_cases
+, N_loc          = length(unique(munip_name))
+, loc_id         = as.numeric(as.factor(munip_name))
+, temp           = temp
+, precip         = precip
+, pop            = pop
+, gdp            = gdp
+, area           = area
+, ag             = ag
+, ndvi           = ndvi
+, year           = year + abs(min(year)) + 1
+, max_year       = max(year + abs(min(year)) + 1)
+  ))
 
+## Add data for out-of-sample predictions
+stan.data <- c(
+  stan.data
+, N_out          = nrow(VL.year.out)
+, N_loc_out      = length(unique(VL.year.out$munip_name))
+, loc_id_out     = list(as.numeric(as.factor(VL.year.out$munip_name)))
+, temp_out       = list(c(VL.year.out$mean_temp   - mean(VL.stan.in$mean_temp))   / sd(VL.stan.in$mean_temp))
+, precip_out     = list(c(VL.year.out$mean_precip - mean(VL.stan.in$mean_precip)) / sd(VL.stan.in$mean_precip))
+, pop_out        = list(c(VL.year.out$mean_pop    - mean(VL.stan.in$mean_pop))    / sd(VL.stan.in$mean_pop))
+, gdp_out        = list(c(VL.year.out$mean_GDP    - mean(VL.stan.in$mean_GDP))    / sd(VL.stan.in$mean_GDP))
+, area_out       = list(c(VL.year.out$mean_area   - mean(VL.stan.in$mean_area))   / sd(VL.stan.in$mean_area))
+, ag_out         = list(c(VL.year.out$mean_ag     - mean(VL.stan.in$mean_ag))     / sd(VL.stan.in$mean_ag))
+, ndvi_out       = list(c(VL.year.out$mean_ndvi   - mean(VL.stan.in$mean_ndvi))   / sd(VL.stan.in$mean_ndvi))
+, year_out       = list(c(VL.year.out$mean_year   - mean(VL.stan.in$mean_year))   + max(VL.stan.in$year))
+)
+  
+}

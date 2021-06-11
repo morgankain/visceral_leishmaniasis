@@ -1,197 +1,11 @@
 ####
-## Stan models from group 4 through 6 (see VL_stan.R)
+## Final Stan models for forecasting into the next two years
 ####
 
-## For the models in group 4 through 6 the data setup 
-
-if (stan.model_which == "Simple3_NB.ZI") {
-  
-stan.fit <- stan(
-  file    = "stan_models/Simple3_NB.ZI.stan"
-, data    = stan.data
-, chains  = 3
-, iter    = ni
-, warmup  = nb
-, thin    = nt
-, init    = list(
-   ## With the generated quantities for the out of sample predictions need to 
-    ## start the variance terms in a reasonable location
-   ## For safety also starting the squared terms at the center of the prior (zero)
-  list(
-    reciprocal_phi     = 1
-  , phi                = 1
-  , sigma_alpha_lambda = 1
-  , sigma_year_lambda  = 1
-  , temp_lambda_bar_sq = 0
-  , alpha_theta_bar    = 0
-  , gdp_theta_bar      = 0
-  , theta              = 0.5
-  , theta_out          = 0.5
-  )
-,   list(
-    reciprocal_phi     = 1
-  , phi                = 1
-  , sigma_alpha_lambda = 1
-  , sigma_year_lambda  = 1
-  , temp_lambda_bar_sq = 0
-  , alpha_theta_bar    = 0
-  , gdp_theta_bar      = 0
-  , theta              = 0.5
-  , theta_out          = 0.5
-  )
-,   list(
-    reciprocal_phi     = 1
-  , phi                = 1
-  , sigma_alpha_lambda = 1
-  , sigma_year_lambda  = 1
-  , temp_lambda_bar_sq = 0
-  , alpha_theta_bar    = 0
-  , gdp_theta_bar      = 0
-  , theta              = 0.5
-  , theta_out          = 0.5
-  )
-)
-, seed    = 1002
-, control = list(
-    adapt_delta = 0.95
-  , max_treedepth = 12
-  ))
- 
-} else if (stan.model_which == "Simple4_NB.ZI") {
-  
-stan.fit <- stan(
-  file    = "stan_models/Simple4_NB.ZI.stan"
-, data    = stan.data
-, chains  = 1
-, iter    = ni
-, warmup  = nb
-, thin    = nt
-, init    = list(
-   ## With the generated quantities for the out of sample predictions need to 
-    ## start the variance terms in a reasonable location
-   ## For safety also starting the squared terms at the center of the prior (zero)
-  list(
-    reciprocal_phi     = 1
-  , phi                = 1
-  , sigma_alpha_lambda = 1
-  , sigma_alpha_theta  = 1
-  , sigma_year_lambda  = 1
-  , temp_lambda_bar_sq = 0
-  , alpha_theta_bar    = 0
-  , gdp_theta_bar      = 0
-  , theta              = 0.5
-  , theta_out          = 0.5
-  )
-,   list(
-    reciprocal_phi     = 1
-  , phi                = 1
-  , sigma_alpha_lambda = 1
-  , sigma_alpha_theta  = 1
-  , sigma_year_lambda  = 1
-  , temp_lambda_bar_sq = 0
-  , alpha_theta_bar    = 0
-  , gdp_theta_bar      = 0
-  , theta              = 0.5
-  , theta_out          = 0.5
-  )
-,   list(
-    reciprocal_phi     = 1
-  , phi                = 1
-  , sigma_alpha_lambda = 1
-  , sigma_alpha_theta  = 1
-  , sigma_year_lambda  = 1
-  , temp_lambda_bar_sq = 0
-  , alpha_theta_bar    = 0
-  , gdp_theta_bar      = 0
-  , theta              = 0.5
-  , theta_out          = 0.5
-  )
-)
-, seed    = 1002
-, control = list(
-    adapt_delta = 0.95
-  , max_treedepth = 12
-  ))  
-  
-} else if (stan.model_which == "NB.ZI.f1") {
- 
-stan.fit <- stan(
-  file    = "stan_models/NB.ZI.f1.stan"
-, data    = stan.data
-, chains  = 1
-, iter    = ni
-, warmup  = nb
-, thin    = nt
-, init    = list(
-   ## With the generated quantities for the out of sample predictions need to 
-    ## start the variance terms in a reasonable location
-   ## For safety also starting the squared terms at the center of the prior (zero)
-  list(
-    reciprocal_phi     = 1
-  , phi                = 1
-  , sigma_alpha_lambda = 1
-  , sigma_alpha_theta  = 1
-  , sigma_year_lambda  = 1
-  , temp_lambda_bar_sq = 0
-  , alpha_theta_bar    = 0
-  , gdp_theta_bar      = 0
-  , theta              = 0.5
-  , theta_out          = 0.5
-  )) 
-, seed    = 1003
-, control = list(
-    adapt_delta = 0.95
-  , max_treedepth = 12
-  )) 
-  
-} else if (stan.model_which == "NB.ZI.C1") {
-  
-stan.fit <- stan(
-  file    = "stan_models/NB.ZI.C1.stan"
-, data    = stan.data
-, chains  = 1
-, iter    = ni
-, warmup  = nb
-, thin    = nt
-, init    = list(
-   ## With the generated quantities for the out of sample predictions need to 
-    ## start the variance terms in a reasonable location
-   ## For safety also starting the squared terms at the center of the prior (zero)
-  list(
-    reciprocal_phi     = 1
-  , phi                = 1
-  , sigma_alpha_lambda = 1
-  , sigma_alpha_theta  = 1
-  , sigma_year_lambda  = 1
-  , alpha_lambda_bar   = 1
-  , alpha_theta_bar    = 0
-  , gdp_theta_bar      = 0
-  , temp_lambda_bar    = 0
-  , temp_lambda_bar_sq = 0
-  , precip_lambda_bar    = 0
-  , precip_lambda_bar_sq = 0
-  , pop_lambda_bar    = 0
-  , pop_lambda_bar_sq = 0
-  , area_lambda_bar    = 0
-  , area_lambda_bar_sq = 0
-  , ag_lambda_bar    = 0
-  , ndvi_lambda_bar    = 0
-  , ndvi_lambda_bar_sq = 0
-  , year_lambda_bar    = 0
-  , eps_alpha_theta    = rep(0, 126)
-  , eps_alpha_lambda   = rep(0, 126)
-  , eps_year_lambda    = rep(0, 126)
-  )) 
-, seed    = 1003
-, control = list(
-    adapt_delta = 0.95
-  , max_treedepth = 12
-  ))
-  
-} else if (stan.model_which == "NB.ZI.C2") {
+if (stan.model_which == "NB.ZI.F.L") {
 
 stan.fit <- stan(
-  file    = "stan_models/NB.ZI.C2.stan"
+  file    = "stan_models/NB.ZI.F.L.stan"
 , data    = stan.data
 , chains  = 1
 , iter    = ni
@@ -203,8 +17,66 @@ stan.fit <- stan(
    ## For safety also starting the squared terms at the center of the prior (zero)
   list(
     reciprocal_phi     = .1
-  , sigma_alpha_lambda = 1
-  , sigma_alpha_theta  = 1
+  , sigma_alpha_lambda = .3
+  , sigma_alpha_theta  = .3
+  , sigma_year_lambda  = .3
+    
+  , alpha_lambda_bar   = -1
+  , alpha_theta_bar    = 0
+    
+  , gdp_theta_bar      = 0
+    
+  , temp_lambda_bar      = 0
+  , temp_lambda_bar_sq   = 0
+  , precip_lambda_bar    = 0
+  , precip_lambda_bar_sq = 0
+  , pop_lambda_bar       = 0
+  , pop_lambda_bar_sq    = 0
+  , area_lambda_bar      = 0
+  , area_lambda_bar_sq   = 0
+  , ag_lambda_bar        = 0
+  , ndvi_lambda_bar      = 0
+  , ndvi_lambda_bar_sq   = 0
+    
+  , eps_alpha_theta    = rep(0, stan.data$N_loc)
+  , eps_alpha_lambda   = rep(0, stan.data$N_loc)
+  , eps_year_lambda    = rep(0, stan.data$N_loc)
+    
+  ))
+, seed    = 1008
+## If issues arise can just give certain parameters for tracking for ease of use with shinystan
+#, pars    = c(
+#  "reciprocal_phi"
+#, "phi"
+#, "lambda_log"
+#, "lambda_log_out"
+#, "mu_out"
+#, "mu"
+#, "y_sim"
+#, "y_sim_out"
+#)
+, control = list(
+    adapt_delta = 0.95
+  , max_treedepth = 12
+  ))
+  
+} else if (stan.model_which == "NB.ZI.F.S") {
+  
+stan.fit <- stan(
+  file    = "stan_models/NB.ZI.F.S.stan"
+, data    = stan.data
+, chains  = 1
+, iter    = ni
+, warmup  = nb
+, thin    = nt
+, init    = list(
+   ## With the generated quantities for the out of sample predictions need to 
+    ## start the variance terms in a reasonable location
+   ## For safety also starting the squared terms at the center of the prior (zero)
+  list(
+    reciprocal_phi     = .1
+  , sigma_alpha_lambda = .3
+  , sigma_alpha_theta  = .3
     
   , alpha_lambda_bar   = -1
   , alpha_theta_bar    = 0
@@ -228,8 +100,8 @@ stan.fit <- stan(
     
   , eps_year_deltas    = matrix(data = 0, nrow = stan.data$N_loc, ncol = stan.data$max_year - 1)
   , real_deltas_bar    = rep(0, stan.data$max_year)
-  , delta_sigma        = 1
-  , sigma_year_lambda  = 1
+  , delta_sigma        = .3
+  , sigma_year_lambda  = .3
     
   ))
 , seed    = 1008
@@ -248,7 +120,7 @@ stan.fit <- stan(
     adapt_delta = 0.95
   , max_treedepth = 12
   ))
-  
+   
 }
 
 launch_shinystan(stan.fit)
@@ -345,11 +217,11 @@ pred.out <- stan.fit.summary[grep("y_sim_out", dimnames(stan.fit.summary)[[1]]),
 pred.out <- pred.out[, c(4, 8)]
 pred.out <- data.frame(pred.out)
 names(pred.out) <- c("lwr", "upr")
-pred.out <- pred.out %>% mutate(entry = seq(1, n()))
-
-test.out <- VL.year.out %>% ungroup( ) %>% mutate(entry = seq(1, n())) %>%
-  left_join(., pred.out) %>% arrange(desc(vl_cases)) %>%
-  mutate(ordered_entry = factor(seq(1, n())))
+pred.out <- pred.out %>% mutate(
+  year = rep(c(max(VL.year$year) + 1, max(VL.year$year) + 2)
+    , length(unique(VL.year$munip_name)))
+, munip_name = rep(unique(VL.year$munip_name), each = 2)
+)
 
 ## Check this 4th data point. Not awesome, but as expected much better than the previous model. Also not unexpected 
  ## that this is only marginally ok given how few predictors are in the model. 
@@ -358,30 +230,26 @@ randplotloc <- unique(VL.year$munip_name)[randplotloc]
 
 VL.year %>% filter(munip_name %in% randplotloc) %>% 
   droplevels() %>% {
- ggplot(., aes(mean_year, vl_cases)) + geom_point() +
-    geom_vline(xintercept = 2013.5, linetype = "dotted") +
+ ggplot(.) + geom_point(aes(year, vl_cases)) +
     facet_wrap(~munip_name) +
     geom_errorbar(
-      data = 
-        (test.out %>% filter(munip_name %in% randplotloc))
-    , aes(mean_year, ymin = lwr, ymax = upr)
+      data = (pred.out %>% filter(munip_name %in% randplotloc))
+    , aes(year, ymin = lwr, ymax = upr)
     , color = "red"
     , lwd = 0.5
     , width = 0.2
-    ) + scale_y_log10()
+    ) + scale_y_log10() +
+      scale_x_continuous(breaks = c(
+        2007, 2009, 2011, 2013, 2015, 2017
+      )) +
+      theme(
+    legend.key.size = unit(.65, "cm")
+  , legend.title = element_text(size = 12)
+  , legend.text = element_text(size = 14)
+  , legend.background = element_blank()
+  , axis.text.x = element_text(size = 10, angle = 310, hjust = 0) 
+  , axis.text.y = element_text(size = 12) 
+  , axis.title.x = element_text(size = 12) 
+  , axis.title.y = element_text(size = 12)
+  )
   }
-
-VL.year %>% filter(munip_name == "Chapadão Do Lageado") %>% 
-  droplevels() %>% {
- ggplot(., aes(mean_year, vl_cases)) + geom_point() +
-    geom_vline(xintercept = 2013.5, linetype = "dotted") +
-    facet_wrap(~munip_name) +
-    geom_errorbar(
-      data = 
-        (test.out %>% filter(munip_name == "Chapadão Do Lageado"))
-    , aes(mean_year, ymin = lwr, ymax = upr)
-    , color = "red"
-    , lwd = 0.5
-    , width = 0.2
-    ) + scale_y_log10()
-}

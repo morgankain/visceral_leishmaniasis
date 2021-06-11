@@ -47,8 +47,8 @@
 ## Run a small sample model for debugging purposes? 
 debug.stan.model <- TRUE  
 ## If TRUE:
-deubg.top_samps  <- 30    ## Include the top X municipalities by cases 
-debug.ran_samps  <- 50    ## Include Y random municipalities
+deubg.top_samps  <- 50    ## Include the top X municipalities by cases 
+debug.ran_samps  <- 100   ## Include Y random municipalities
 set.seed(10003)           ## Set a seed to pick these random municipalities for reproducibility
 
 ####
@@ -67,11 +67,12 @@ nc <- 1      ## number of chains (3 or 4 is usually sensible, 1 is ok for quick 
 ## Building the model up from from the very basics
 ####
 
+model.form <- "forecast" ## setup, fit, or forecast
+
 ## Each subsequent grouping incorporates all of the material from the previous steps
 
-## The first three sets will be run through # source("VL_stan_construct.R")
- ## Pick the name and run that source
-
+if (model.form == "setup") {
+  
 ## This first set of models (non-zero inflated) also fit Frequentist models with canned packages to compare predictions 
 # "Simple_Poisson"     -- Random intercept only model
 # "Simple2_Poisson"    -- Random slope model (in one covariate)
@@ -82,14 +83,16 @@ nc <- 1      ## number of chains (3 or 4 is usually sensible, 1 is ok for quick 
 # "Simple2_Poisson.ZI" -- Random slope model but with a Zero-Inflated Negative Binomial distribution
 # "Simple2_NB.ZI"      -- Random slope model but with a Zero-Inflated Negative Binomial distribution
 #                         -- No predictors yet in the zero-inflated piece of the model
-#                         -- Random slopes only in the count distribution                 
+#                         -- Random slopes only in the count distribution 
 
 ## Third set includes out-of-sample predictions in two ways
 ## A location not included in the fitted model (first). Expected to perform only ok because of the random effect of location
 ## Two years for locations that are included in the model (second). Expected to perform better than ^^ because these locations have
 ## their conditional mode estimated
-# "Simple2_NB.ZI.OoS.S" -- Out of sample over space
-# "Simple2_NB.ZI.OoS.T" -- Out of sample over time
+# "Simple2_NB.ZI.OoS.S"          -- Out of sample over space
+# "Simple2_NB.ZI.OoS.T"          -- Out of sample over time
+# "Simple2_NB.ZI.OoS.T.spline"   -- Replace the linear term over year with a smoothing term
+# "Simple2_NB.ZI.OoS.T.spline.R" -- Allow the smoothing terms to vary by location
 
 stan.model_which <- "Simple2_NB.ZI.OoS.T"
 
@@ -100,9 +103,8 @@ source("VL_stan_data_construct.R")
 ## Run the chosen model
 source("VL_stan_construct.R")
 
-## The fourth through sixth sets that really start pulling the model together will be run through # source("VL_stan_finalize.R")
- ## Pick the name and run that source
-
+} else if (model.form == "fit") {
+  
 ## Fourth set explores adding predictors to the zero-inflated section of the model
 ## and starts to explore quadratic terms as well
 ## These keep the out-of-sample predictions for the last two years from "Simple2_NB.ZI.OoS.T" above
@@ -114,8 +116,9 @@ source("VL_stan_construct.R")
 
 ## Sixth set are _hypothetically_ complete models
 # "NB.ZI.C1"            -- Lots of predictors, sensible functional forms etc. 
+# "NB.ZI.C2"            -- Random spline smoother for year instead of the linear random effect for year
 
-stan.model_which <- "Simple3_NB.ZI"
+stan.model_which <- "NB.ZI.C2"
 
 ## Set up the data into the structure needed for these stan models. The data required will start to vary a lot for these
  ## models so using a new data script
@@ -124,5 +127,17 @@ source("VL_stan_data_finalize.R")
 ## Run the chosen model
 source("VL_stan_finalize.R")
 
-## Take a look at the model diagnostics with the nifty shinystan GUI
-# launch_shinystan(stan.fit)
+} else if (model.form == "forecast") {
+
+## use the previous models 
+source("VL_stan_data_forecast.R")  
+source("VL_stan_forecast.R")
+
+} else {
+  
+print("Choose one of the three correct options")
+  
+}
+
+
+

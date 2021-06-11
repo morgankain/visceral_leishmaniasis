@@ -344,4 +344,176 @@ VL.stan %>% {
     scale_y_log10()
 }
 
+} else if (stan.model_which == "Simple2_NB.ZI.OoS.T.Spline") {
+  
+## Set up the out of sample years for the same locations here
+VL.stan.in  <- VL.stan %>% filter(mean_year < 2014)
+VL.stan.out <- VL.stan %>% filter(mean_year > 2013)
+  
+stan.data   <- list(
+  N              = nrow(VL.stan.in)
+, y              = VL.stan.in$vl_cases
+, N_loc          = length(unique(VL.stan.in$munip_name))
+, loc_id         = as.numeric(as.factor(VL.stan.in$munip_name))
+, temp           = VL.stan.in$temp
+, precip         = VL.stan.in$precip
+## For the spline, year becomes an index
+, year           = VL.stan.in$year + abs(min(VL.stan.in$year)) + 1
+, max_year       = max(VL.stan.in$year + abs(min(VL.stan.in$year)) + 1)
+, pop            = VL.stan.in$pop
+## The out of sample covariates are centered using the center of the covariates used to fit the model 
+, N_out          = nrow(VL.stan.out)
+, N_loc_out      = length(unique(VL.stan.out$munip_name))
+, loc_id_out     = as.numeric(as.factor(VL.stan.out$munip_name))
+, temp_out       = c(VL.stan.out$mean_temp - mean(VL.stan.in$mean_temp))
+, precip_out     = c(VL.stan.out$mean_precip - mean(VL.stan.in$mean_precip))
+, year_out       = c(VL.stan.out$mean_year - mean(VL.stan.in$mean_year)) + max(VL.stan.in$year)
+, pop_out        = c(VL.stan.out$mean_pop - mean(VL.stan.in$mean_pop))
+  )
+
+stan.fit <- stan(
+  file    = "stan_models/Simple2_NB.ZI.OoS.T.Spline.stan"
+, data    = stan.data
+, chains  = nc
+, iter    = ni
+, warmup  = nb
+, thin    = nt
+, init    = list(
+   ## With the generated quantities for the out of sample predictions need to 
+    ## start the variance terms in a reasonable location
+  list(
+    reciprocal_phi     = 1
+  , phi                = 1
+  , sigma_alpha_lambda = 1
+  , sigma_year_lambda  = 1
+  )
+)
+, seed    = 1001
+, control = list(
+    adapt_delta = 0.95
+  , max_treedepth = 12
+  ))
+
+launch_shinystan(stan.fit)
+  
+## Plot the out of sample PI and data points
+stan.fit.summary <- summary(stan.fit)[[1]]
+pred.out <- stan.fit.summary[grep("y_sim_out", dimnames(stan.fit.summary)[[1]]), ]
+pred.out <- pred.out[, c(4, 8)]
+pred.out <- data.frame(pred.out)
+names(pred.out) <- c("lwr", "upr")
+pred.out <- pred.out %>% mutate(entry = seq(1, n()))
+
+test.out <- VL.stan.out %>% ungroup( ) %>% mutate(entry = seq(1, n())) %>%
+  left_join(., pred.out) %>% arrange(desc(vl_cases)) %>%
+  mutate(ordered_entry = factor(seq(1, n())))
+
+rand_munip <- sample(unique(test.out$munip_name), 30)
+
+## Check this 4th data point. Not awesome, but as expected much better than the previous model. Also not unexpected 
+ ## that this is only marginally ok given how few predictors are in the model. 
+VL.stan %>% filter(munip_name %in% rand_munip) %>% {
+ ggplot(., aes(mean_year, vl_cases)) + geom_point() +
+    geom_vline(xintercept = 2013.5, linetype = "dotted") +
+    facet_wrap(~munip_name) +
+    geom_errorbar(
+      data = (test.out %>% filter(munip_name %in% rand_munip))
+    , aes(mean_year, ymin = lwr, ymax = upr)
+    , color = "red"
+    , lwd = 0.5
+    , width = 0.2
+    ) +
+    scale_y_log10()
 }
+
+} else if (stan.model_which == "Simple2_NB.ZI.OoS.T.Spline") {
+  
+## Set up the out of sample years for the same locations here
+VL.stan.in  <- VL.stan %>% filter(mean_year < 2014)
+VL.stan.out <- VL.stan %>% filter(mean_year > 2013)
+  
+stan.data   <- list(
+  N              = nrow(VL.stan.in)
+, y              = VL.stan.in$vl_cases
+, N_loc          = length(unique(VL.stan.in$munip_name))
+, loc_id         = as.numeric(as.factor(VL.stan.in$munip_name))
+, temp           = VL.stan.in$temp
+, precip         = VL.stan.in$precip
+## For the spline, year becomes an index
+, year           = VL.stan.in$year + abs(min(VL.stan.in$year)) + 1
+, max_year       = max(VL.stan.in$year + abs(min(VL.stan.in$year)) + 1)
+, pop            = VL.stan.in$pop
+## The out of sample covariates are centered using the center of the covariates used to fit the model 
+, N_out          = nrow(VL.stan.out)
+, N_loc_out      = length(unique(VL.stan.out$munip_name))
+, loc_id_out     = as.numeric(as.factor(VL.stan.out$munip_name))
+, temp_out       = c(VL.stan.out$mean_temp - mean(VL.stan.in$mean_temp))
+, precip_out     = c(VL.stan.out$mean_precip - mean(VL.stan.in$mean_precip))
+, year_out       = c(VL.stan.out$mean_year - mean(VL.stan.in$mean_year)) + max(VL.stan.in$year)
+, pop_out        = c(VL.stan.out$mean_pop - mean(VL.stan.in$mean_pop))
+  )
+
+stan.fit <- stan(
+  file    = "stan_models/Simple2_NB.ZI.OoS.T.Spline.R.stan"
+, data    = stan.data
+, chains  = nc
+, iter    = ni
+, warmup  = nb
+, thin    = nt
+, init    = list(
+   ## With the generated quantities for the out of sample predictions need to 
+    ## start the variance terms in a reasonable location
+  list(
+    reciprocal_phi     = 1
+  , phi                = 1
+  , sigma_alpha_lambda = 1
+  , sigma_year_lambda  = 1
+  )
+)
+, seed    = 1001
+, control = list(
+    adapt_delta = 0.95
+  , max_treedepth = 12
+  ))
+
+launch_shinystan(stan.fit)
+  
+## Plot the out of sample PI and data points
+stan.fit.summary <- summary(stan.fit)[[1]]
+
+hist(
+  summary(stan.fit)[[1]][grep("eps_year_deltas", dimnames(summary(stan.fit)[[1]])[[1]]), ][, 1] *
+  summary(stan.fit)[[1]][grep("sigma_year_lambda", dimnames(summary(stan.fit)[[1]])[[1]]), 1]
+, breaks = 50
+)
+
+pred.out <- stan.fit.summary[grep("y_sim_out", dimnames(stan.fit.summary)[[1]]), ]
+pred.out <- pred.out[, c(4, 8)]
+pred.out <- data.frame(pred.out)
+names(pred.out) <- c("lwr", "upr")
+pred.out <- pred.out %>% mutate(entry = seq(1, n()))
+
+test.out <- VL.stan.out %>% ungroup( ) %>% mutate(entry = seq(1, n())) %>%
+  left_join(., pred.out) %>% arrange(desc(vl_cases)) %>%
+  mutate(ordered_entry = factor(seq(1, n())))
+
+rand_munip <- sample(unique(test.out$munip_name), 30)
+
+## Check this 4th data point. Not awesome, but as expected much better than the previous model. Also not unexpected 
+ ## that this is only marginally ok given how few predictors are in the model. 
+VL.stan %>% filter(munip_name %in% rand_munip) %>% {
+ ggplot(., aes(mean_year, vl_cases)) + geom_point() +
+    geom_vline(xintercept = 2013.5, linetype = "dotted") +
+    facet_wrap(~munip_name) +
+    geom_errorbar(
+      data = (test.out %>% filter(munip_name %in% rand_munip))
+    , aes(mean_year, ymin = lwr, ymax = upr)
+    , color = "red"
+    , lwd = 0.5
+    , width = 0.2
+    ) +
+    scale_y_log10()
+}
+
+}
+

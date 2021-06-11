@@ -109,6 +109,7 @@ VL.test %>% {
 ## area   --- log10, quadratic
 ## ag     --- no log, linear
 ## ndvi   --- no log, quadratic
+## year   --- no log, cubic?
 
 ### Test of scaling the out of sample values vs the in sample values
 cov.in  <- c(2, 3, 4)
