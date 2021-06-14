@@ -1,6 +1,7 @@
 ####
-## Packages
+## Needed packages
 ####
+
 needed_packages <- c(
   "tidyr"
 , "dplyr"
@@ -19,7 +20,7 @@ needed_packages <- c(
 , "glmmTMB"
 )
 
-## If TRUE install all missing packages, otherwise print the packages that are missing
+## If inst_miss_pack == TRUE, install all missing packages, otherwise print the packages that are missing
 if (inst_miss_pack) {
 
 if (length(setdiff(needed_packages, rownames(installed.packages()))) > 0) {
@@ -31,27 +32,22 @@ lapply(needed_packages, require, character.only = TRUE)
 } else {
 
 print(
-data.frame(
-           needed_packages
-, loaded = unlist(lapply(needed_packages, require, character.only = TRUE))
-)
+data.frame(needed_packages, loaded = unlist(lapply(needed_packages, require, character.only = TRUE)))
 )
   
 }
-
-source("ggplot_theme.R")
 
 ####
 ## Functions
 ####
 `%notin%` <- Negate(`%in%`)
+source("ggplot_theme.R")
 
 ####
 ## Data
 ####
 
-## A previously cleaned data file has been saved. But if for some reason it isn't present, it can
- ## be recreated from the raw data
+## A previously cleaned data file has been saved. But if for some reason it isn't present, it can be recreated from the raw data
 if (!file.exists("VL_cleaned.Rds")) {
 ## VL data, District mapping data, and a matching of the district names
 mun        <- readRDS("Brazil_map.rds")

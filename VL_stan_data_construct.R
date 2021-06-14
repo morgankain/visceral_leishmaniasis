@@ -2,9 +2,10 @@
 ## Prep the data for the first set of Stan models using the same predictors
 ####
 
-## Lots of covariates. First take a look at them:
+## Lots of covariates. First take a look at them if print.predictors == TRUE
 if (print.predictors) {
   
+## Yes, non-dynamic, but w/e
 all.covar <- names(VL)[c(7:25, 28)][-c(8, 12)]
 
 for (i in seq_along(all.covar)) {
@@ -27,7 +28,12 @@ gridExtra::grid.arrange(
 
 }
 
-## Need to decide which of these covariates are relevant to be used in the model:
+## As a first pass in determining which of these covariates are relevant to be used in the model
+ ## see some scratch in: 
+  ## VL_covariates.R
+
+## For the first few models with the smallest number of covariates, just using the following covariates,
+ ## summarized over months:
 VL.year <- VL %>% group_by(munip_name, year) %>% 
   summarize(
     vl_cases    = sum(vl_cases)
@@ -41,11 +47,14 @@ VL.year <- VL %>% group_by(munip_name, year) %>%
 ## Cant have NA's so drop all of those
 VL.year <- VL.year %>% drop_na() %>% ungroup()
 
-## If debugging run the model with only a few locations
+## If debugging, run the model with only a few locations
 if (debug.stan.model) {
+  
+## Pick a few of the locations with the largest numbers of cases
 top_locs  <- VL %>% group_by(munip_name) %>% summarize(tot_cases = sum(vl_cases)) %>% 
   arrange(desc(tot_cases)) %>% slice(1:deubg.top_samps) %>% dplyr::select(munip_name) %>% unname() %>% unlist()
 
+## And a random smattering of other locations
 rand_locs <- VL %>% group_by(munip_name) %>% summarize(tot_cases = sum(vl_cases)) %>% 
   arrange(desc(tot_cases)) %>% filter(munip_name %notin% top_locs) %>% dplyr::select(munip_name) %>% unname() %>% 
   unlist() %>% sample(debug.ran_samps)
@@ -56,12 +65,13 @@ VL.year <- VL.year %>% filter(munip_name %in% rand_locs)
 
 }
 
+## Scale all the predictors, only center for year
 VL.stan <- VL.year %>% mutate(
     year   = c(scale(mean_year, scale = F))
-  , precip = c(scale(mean_precip, scale = F))
-  , temp   = c(scale(mean_temp, scale = F))
-  , pop    = c(scale(mean_pop, scale = F))
-  , gdp    = c(scale(mean_GDP, scale = F)))
+  , precip = c(scale(mean_precip, scale = T))
+  , temp   = c(scale(mean_temp, scale = T))
+  , pop    = c(scale(mean_pop, scale = T))
+  , gdp    = c(scale(mean_GDP, scale = T)))
 
 ## Stan data requires a list
 stan.data   <- with(

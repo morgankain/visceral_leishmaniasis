@@ -1,11 +1,10 @@
 ####
-## Stan models from group 4 through 6 (see VL_stan.R)
+## Stan models from the second group (model.form == "finalize")
 ####
-
-## For the models in group 4 through 6 the data setup 
 
 if (stan.model_which == "Simple3_NB.ZI") {
   
+## Trial with 3 chains as will be used in a final run to check on convergence
 stan.fit <- stan(
   file    = "stan_models/Simple3_NB.ZI.stan"
 , data    = stan.data
@@ -113,10 +112,10 @@ stan.fit <- stan(
   , max_treedepth = 12
   ))  
   
-} else if (stan.model_which == "NB.ZI.f1") {
+} else if (stan.model_which == "NB.ZI.f") {
  
 stan.fit <- stan(
-  file    = "stan_models/NB.ZI.f1.stan"
+  file    = "stan_models/NB.ZI.f.stan"
 , data    = stan.data
 , chains  = 1
 , iter    = ni
@@ -144,10 +143,10 @@ stan.fit <- stan(
   , max_treedepth = 12
   )) 
   
-} else if (stan.model_which == "NB.ZI.C1") {
+} else if (stan.model_which == "NB.ZI.C.L") {
   
 stan.fit <- stan(
-  file    = "stan_models/NB.ZI.C1.stan"
+  file    = "stan_models/NB.ZI.C.L.stan"
 , data    = stan.data
 , chains  = 1
 , iter    = ni
@@ -188,10 +187,10 @@ stan.fit <- stan(
   , max_treedepth = 12
   ))
   
-} else if (stan.model_which == "NB.ZI.C2") {
+} else if (stan.model_which == "NB.ZI.C.S") {
 
 stan.fit <- stan(
-  file    = "stan_models/NB.ZI.C2.stan"
+  file    = "stan_models/NB.ZI.C.S.stan"
 , data    = stan.data
 , chains  = 1
 , iter    = ni
@@ -351,9 +350,8 @@ test.out <- VL.year.out %>% ungroup( ) %>% mutate(entry = seq(1, n())) %>%
   left_join(., pred.out) %>% arrange(desc(vl_cases)) %>%
   mutate(ordered_entry = factor(seq(1, n())))
 
-## Check this 4th data point. Not awesome, but as expected much better than the previous model. Also not unexpected 
- ## that this is only marginally ok given how few predictors are in the model. 
-randplotloc <- sample(seq(1, length(unique(VL.year$munip_name))), 50)
+## Only plot a few random locations to not overload ggplot
+randplotloc <- sample(seq(1, length(unique(VL.year$munip_name))), 30)
 randplotloc <- unique(VL.year$munip_name)[randplotloc]
 
 VL.year %>% filter(munip_name %in% randplotloc) %>% 
@@ -371,6 +369,7 @@ VL.year %>% filter(munip_name %in% randplotloc) %>%
     ) + scale_y_log10()
   }
 
+## Check a specific location
 VL.year %>% filter(munip_name == "Chapadão Do Lageado") %>% 
   droplevels() %>% {
  ggplot(., aes(mean_year, vl_cases)) + geom_point() +

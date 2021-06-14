@@ -1,5 +1,5 @@
 ####
-## Stan models from group 1 through 3 (see VL_stan.R)
+## Stan models from the first group (model.form == "construct")
 ####
 
 ## just a simple Poisson first to work on overall structure and to check for obvious errors 
@@ -80,6 +80,7 @@ cbind(
 , getME(test.nb.s, "b")[seq(2, nrow(getME(test.nb.s, "b")), by = 2), 1])
 ); abline(a = 0, b = 1)
   
+## Same covariates as the above model but using a negative binomial distribution 
 } else if (stan.model_which == "Simple2_NB") {
   
 stan.fit <- stan(
@@ -120,6 +121,7 @@ cbind(
 , getME(test.nb.s, "b")[seq(2, nrow(getME(test.nb.s, "b")), by = 2), 1])
 ); abline(a = 0, b = 1)
   
+## Zero-inflated Poisson model
 } else if (stan.model_which == "Simple2_Poisson.ZI") {
   
 stan.fit <- stan(
@@ -147,8 +149,7 @@ hist(
   , breaks = 30
 )
 
-## Also, explore the prediction intervals from this model against the data.
-  
+## Zero inflated negative binomial model
 } else if (stan.model_which == "Simple2_NB.ZI") {
   
 stan.fit <- stan(
@@ -192,10 +193,11 @@ ggplot(test.out, aes(ordered_entry, vl_cases)) +
   geom_errorbar(aes(ymin = lwr, ymax = upr), colour = "red", alpha = 0.4) +
   geom_point(aes(ordered_entry, vl_cases))
 
+## Out of sample predictions over space
 } else if (stan.model_which == "Simple2_NB.ZI.OoS.S") {
 
 ####
-## NOTE: This isn't quite correct because the covaraites need to get scaled AFTER the split
+## NOTE!!!: This isn't quite correct because the covaraites need to get scaled AFTER the split
 ## to the fitting set and out-of-sample set. However, for a proof of concept this is fine...
 ## It is fixed in the subsequent model fits with the greater number of covaraites. Keeping it 
 ## because it fits in with the script well, but keep in mind it isn't quite right
@@ -268,6 +270,7 @@ ggplot(test.out, aes(ordered_entry, vl_cases)) +
   geom_errorbar(aes(ymin = lwr, ymax = upr), colour = "red", alpha = 0.4) +
   geom_point(aes(ordered_entry, vl_cases))
   
+## Out of sample predictions over time for each location in the fitted model
 } else if (stan.model_which == "Simple2_NB.ZI.OoS.T") {
   
 ## Set up the out of sample years for the same locations here
@@ -344,6 +347,8 @@ VL.stan %>% {
     scale_y_log10()
 }
 
+## Out of sample prediction model with a spline for year instead of a linear term
+#  Extensive commenting about the spline itself in the stan model
 } else if (stan.model_which == "Simple2_NB.ZI.OoS.T.Spline") {
   
 ## Set up the out of sample years for the same locations here
@@ -426,7 +431,8 @@ VL.stan %>% filter(munip_name %in% rand_munip) %>% {
     scale_y_log10()
 }
 
-} else if (stan.model_which == "Simple2_NB.ZI.OoS.T.Spline") {
+## Add random effects into the spline model
+} else if (stan.model_which == "Simple2_NB.ZI.OoS.T.Spline.R") {
   
 ## Set up the out of sample years for the same locations here
 VL.stan.in  <- VL.stan %>% filter(mean_year < 2014)
@@ -497,10 +503,9 @@ test.out <- VL.stan.out %>% ungroup( ) %>% mutate(entry = seq(1, n())) %>%
   left_join(., pred.out) %>% arrange(desc(vl_cases)) %>%
   mutate(ordered_entry = factor(seq(1, n())))
 
+## Only plot a few random locations to not overload ggplot
 rand_munip <- sample(unique(test.out$munip_name), 30)
 
-## Check this 4th data point. Not awesome, but as expected much better than the previous model. Also not unexpected 
- ## that this is only marginally ok given how few predictors are in the model. 
 VL.stan %>% filter(munip_name %in% rand_munip) %>% {
  ggplot(., aes(mean_year, vl_cases)) + geom_point() +
     geom_vline(xintercept = 2013.5, linetype = "dotted") +

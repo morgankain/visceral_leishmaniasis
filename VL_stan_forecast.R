@@ -1,5 +1,5 @@
 ####
-## Final Stan models for forecasting into the next two years
+## Stan models from the last group (model.form == "forecast")
 ####
 
 if (stan.model_which == "NB.ZI.F.L") {
@@ -168,7 +168,7 @@ stan.fit.summary.coef <- stan.fit.summary.coef %>%
   mutate(param = factor(param, levels = rev(param)))
 stan.fit.summary.coef <- stan.fit.summary.coef %>% 
   mutate(
-    param_type    = c(c("slope", "int", "int"), rep("slope", 9), rep("var", 5), rep("slope", 3))
+    param_type    = c(c("slope", "int", "int"), rep("slope", 9), rep("var", 4), rep("slope", 3))
   )
 stan.fit.summary.coef <- stan.fit.summary.coef %>% mutate(model_portion = "")
 stan.fit.summary.coef$model_portion[grep("lambda", stan.fit.summary.coef$param)] <- "count"
@@ -195,7 +195,7 @@ stan.fit.summary.coef <- stan.fit.summary.coef %>%
     , "Random intercept variance (count)"
     , "Random intercept variance (prob)"
     , "Random year variance (count)"
-    , "Random year variance sq (count)"
+#    , "Random year variance sq (count)"
     , "Temperature (mean) (linear)"
     , "Temperature (mean) (sq)"
     , "Year (linear)"
@@ -213,6 +213,7 @@ ggplot(., aes(mid, param)) +
     
 }
 
+stan.fit.summary <- summary(stan.fit)[[1]]
 pred.out <- stan.fit.summary[grep("y_sim_out", dimnames(stan.fit.summary)[[1]]), ]
 pred.out <- pred.out[, c(4, 8)]
 pred.out <- data.frame(pred.out)
@@ -223,9 +224,8 @@ pred.out <- pred.out %>% mutate(
 , munip_name = rep(unique(VL.year$munip_name), each = 2)
 )
 
-## Check this 4th data point. Not awesome, but as expected much better than the previous model. Also not unexpected 
- ## that this is only marginally ok given how few predictors are in the model. 
-randplotloc <- sample(seq(1, length(unique(VL.year$munip_name))), 50)
+## Only plot a few random locations to not overload ggplot
+randplotloc <- sample(seq(1, length(unique(VL.year$munip_name))), 30)
 randplotloc <- unique(VL.year$munip_name)[randplotloc]
 
 VL.year %>% filter(munip_name %in% randplotloc) %>% 
@@ -238,6 +238,7 @@ VL.year %>% filter(munip_name %in% randplotloc) %>%
     , color = "red"
     , lwd = 0.5
     , width = 0.2
+    , position = position_dodge2(width = 1)
     ) + scale_y_log10() +
       scale_x_continuous(breaks = c(
         2007, 2009, 2011, 2013, 2015, 2017

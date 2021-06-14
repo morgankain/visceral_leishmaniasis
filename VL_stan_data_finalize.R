@@ -2,11 +2,14 @@
 ## Prep the data for the later more complicated stan models that start adding complexity
 ####
 
-## If debugging run the model with only a few locations
+## If debugging, run the model with only a few locations
 if (debug.stan.model) {
+  
+## Pick a few of the locations with the largest numbers of cases
 top_locs  <- VL %>% group_by(munip_name) %>% summarize(tot_cases = sum(vl_cases)) %>% 
   arrange(desc(tot_cases)) %>% slice(1:deubg.top_samps) %>% dplyr::select(munip_name) %>% unname() %>% unlist()
 
+## And a random smattering of other locations
 rand_locs <- VL %>% group_by(munip_name) %>% summarize(tot_cases = sum(vl_cases)) %>% 
   arrange(desc(tot_cases)) %>% filter(munip_name %notin% top_locs) %>% dplyr::select(munip_name) %>% unname() %>% 
   unlist() %>% sample(debug.ran_samps)
@@ -16,6 +19,7 @@ rand_locs <- c(rand_locs, top_locs)
 VL.temp <- VL %>% filter(munip_name %in% rand_locs)
 }
 
+### Just listing out what I see as sensible covariates and functional forms for those covaraites
 ## temp   --- no log, quadratic
 ## precip --- log10, quadratic
 ## pop    --- log10, quadratic
@@ -24,7 +28,6 @@ VL.temp <- VL %>% filter(munip_name %in% rand_locs)
 ## ag     --- no log, linear
 ## ndvi   --- no log, quadratic
 
-## Need to decide which of these covariates are relevant to be used in the model:
 VL.year <- VL.temp %>% group_by(munip_name, year) %>% 
   summarize(
     vl_cases     = sum(vl_cases)
@@ -35,21 +38,23 @@ VL.year <- VL.temp %>% group_by(munip_name, year) %>%
   , mean_area    = mean(log10(AREA_KM2))
   , mean_ag      = mean(Agriculture.2)
   , mean_ndvi    = mean(median_ndvi)
-# , mean_ibg     = mean(CD_MUN_ibg)
     ) %>% filter(munip_name != "") %>%
   mutate(mean_year = as.numeric(year)) %>%
   drop_na() %>% ungroup()
 
-## Problem if there is zero precip, so set locations with zero to the min observed 
+## Problem if there is zero precipitation, so set locations with zero to the min observed.
+ ## Not optimal, will need to figure out a better way to do this in the final model iteration
 if (length(VL.year[VL.year$mean_precip == 0, ]$mean_precip) > 0) {
  VL.year[VL.year$mean_precip == 0, ]$mean_precip <- min(VL.year[VL.year$mean_precip > 0, ]$mean_precip)
 }
 
 VL.year <- VL.year %>% mutate(mean_precip = log10(mean_precip))
 
+## Split for fitting and prediction
 VL.year.in  <- VL.year %>% filter(mean_year < 2014)
 VL.year.out <- VL.year %>% filter(mean_year > 2013)
 
+## scale all predictors apart from year
 VL.stan.in <- VL.year.in %>% mutate(
     temp   = c(scale(mean_temp  , scale = T))
   , precip = c(scale(mean_precip, scale = T))
@@ -61,9 +66,8 @@ VL.stan.in <- VL.year.in %>% mutate(
   , year   = c(scale(mean_year  , scale = F))
   )
 
-## Data for fitting
-
-if (stan.model_which != "NB.ZI.C2") {
+## Need to set the data up a little different if a linear or quadratic term for year is used
+if (stan.model_which != "NB.ZI.CS") {
 
 stan.data   <- with(
     VL.stan.in
@@ -82,7 +86,7 @@ stan.data   <- with(
 , year           = year
   ))
 
-## Add data for out-of-sample predictions
+## Add data for out-of-sample predictions. Scaled to compare to the predictors used ot fit the model
 stan.data <- c(
   stan.data
 , N_out          = nrow(VL.year.out)
@@ -100,6 +104,7 @@ stan.data <- c(
 
 } else {
   
+## In the spline version, year is used as an index, so adjust appropriately
 stan.data   <- with(
     VL.stan.in
   , list(
@@ -118,7 +123,7 @@ stan.data   <- with(
 , max_year       = max(year + abs(min(year)) + 1)
   ))
 
-## Add data for out-of-sample predictions
+## Add data for out-of-sample predictions. Scaled to compare to the predictors used ot fit the model
 stan.data <- c(
   stan.data
 , N_out          = nrow(VL.year.out)
