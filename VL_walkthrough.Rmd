@@ -151,10 +151,18 @@ One method of debugging the first-level Bayesian model is to compare the predict
 
 ```{r, echo = T}
 ## This model assumes a linear relationship between a few covariates and VL cases and allows the slope of cases over time to vary by municipality
+if (file.exists("test.nb.s.Rds")) {
+  
+test.nb.s <- readRDS("test.nb.s.Rds")
+  
+} else {
+
 test.nb.s <- glmer.nb(
   vl_cases ~ year + temp + precip + pop + (1 + year | munip_name)
   , data = VL.stan
   )
+
+}
 ```
 
 ### A stan model includes all of the following blocks (for the complete model see "stan_models/Simple2_NB.stan"):
@@ -295,10 +303,16 @@ Run the model: \
 
 ```{r, echo = T}
 
+if (file.exists("Simple2_NB.stan.Rds")) {
+  
+stan.fit <- readRDS("Simple2_NB.stan.Rds")
+  
+} else {
+
 stan.fit <- stan(
   file    = "stan_models/Simple2_NB.stan"
 , data    = stan.data
-, chains  = nc  ## Should be 3 or 4 for inference. Just using 1 here for speed
+, chains  = 3   ## Should be 3 or 4 for inference.
 , iter    = ni  ## Should be big enough to get an effective sample size for all parameters to about 1000
 , warmup  = nb
 , thin    = nt  ## A larger number is needed the more autocorrelation present among sequential samples
@@ -307,6 +321,8 @@ stan.fit <- stan(
     adapt_delta = 0.95  ## For details on these parameters see the Stan manual. These modify the sampling algorithm. Often the defaults are fine (these are a bit larger than the defaults)
   , max_treedepth = 12
   ))
+
+}
 
 ```
 
@@ -397,7 +413,6 @@ The full model looks like this: \
 
 ```{r, echo = T, eval = F}
 "
-
 data {
 
   // ** In sample bookkeeping **
@@ -723,22 +738,328 @@ generated quantities {
 "
 ```
 
-Set up the data to run the more complicated model: \
+```{r}
+set.seed(10003)
+## If debugging, run the model with only a few locations
+if (debug.stan.model) {
+  
+## Pick a few of the locations with the largest numbers of cases
+top_locs  <- VL %>% group_by(munip_name) %>% summarize(tot_cases = sum(vl_cases)) %>% 
+  arrange(desc(tot_cases)) %>% slice(1:deubg.top_samps) %>% dplyr::select(munip_name) %>% unname() %>% unlist()
+
+## And a random smattering of other locations
+rand_locs <- VL %>% group_by(munip_name) %>% summarize(tot_cases = sum(vl_cases)) %>% 
+  arrange(desc(tot_cases)) %>% filter(munip_name %notin% top_locs) %>% dplyr::select(munip_name) %>% unname() %>% 
+  unlist() %>% sample(debug.ran_samps)
+ 
+rand_locs <- c(rand_locs, top_locs)
+
+VL.temp <- VL %>% filter(munip_name %in% rand_locs)
+}
+
+VL.year <- VL.temp %>% group_by(munip_name, year) %>% 
+  summarize(
+    vl_cases     = sum(vl_cases)
+  , mean_temp    = mean(mean_air_temp)
+  , mean_precip  = mean(total_precipitation)
+  , mean_pop     = mean(log10(human_pop))
+  , mean_GDP     = mean(log10(GDP_1000s_R))
+  , mean_area    = mean(log10(AREA_KM2))
+  , mean_ag      = mean(Agriculture.2)
+  , mean_ndvi    = mean(median_ndvi)
+    ) %>% filter(munip_name != "") %>%
+  mutate(mean_year = as.numeric(year)) %>%
+  drop_na() %>% ungroup()
+
+## Problem if there is zero precipitation, so set locations with zero to the min observed.
+ ## Not optimal, will need to figure out a better way to do this in the final model iteration
+if (length(VL.year[VL.year$mean_precip == 0, ]$mean_precip) > 0) {
+ VL.year[VL.year$mean_precip == 0, ]$mean_precip <- min(VL.year[VL.year$mean_precip > 0, ]$mean_precip)
+}
+
+VL.year <- VL.year %>% mutate(mean_precip = log10(mean_precip))
+
+## NOTE: the first difference between VL_stan_data_finalize.R and VL_stan_data_forecast.R
+ ## appears here -- no splitting of the data set into two
+
+## scale all predictors apart from year
+VL.stan <- VL.year %>% mutate(
+    temp   = c(scale(mean_temp  , scale = T))
+  , precip = c(scale(mean_precip, scale = T))
+  , pop    = c(scale(mean_pop   , scale = T))
+  , gdp    = c(scale(mean_GDP   , scale = T))
+  , area   = c(scale(mean_area  , scale = T))
+  , ag     = c(scale(mean_ag    , scale = T))
+  , ndvi   = c(scale(mean_ndvi  , scale = T))
+  , year   = c(scale(mean_year  , scale = F))
+  )
+
+## Data for forecasting. This section needs some work to better capture the trends of these covaraiates over time.
+ ## This current debugging / prep version simply uses (very crudely) the mean in the last three years and the sd over 
+  ## the whole period
+VL.stan.F_data <- VL.stan %>% group_by(munip_name) %>%  
+  filter(year >= 0) %>% 
+  summarize(
+  temp_out_mean    = mean(temp)
+, precip_out_mean  = mean(precip)
+, pop_out_mean     = mean(pop)
+, gdp_out_mean     = mean(gdp)
+, area_out_mean    = mean(area)
+, ag_out_mean      = mean(ag)
+, ndvi_out_mean    = mean(ndvi)
+)
+
+VL.stan.F_data <- cbind(
+  VL.stan.F_data
+, (
+  VL.stan %>% group_by(munip_name) %>% summarize(
+  temp_out_sd      = sd(temp)
+, precip_out_sd    = sd(precip)
+, pop_out_sd       = sd(pop)
+, gdp_out_sd       = sd(gdp)
+, area_out_sd      = sd(area)
+, ag_out_sd        = sd(ag)
+, ndvi_out_sd      = sd(ndvi)
+)
+)
+  )
+
+stan.data   <- with(
+    VL.stan
+  , list(
+  N              = nrow(VL.stan)
+, y              = vl_cases
+, N_loc          = length(unique(munip_name))
+, loc_id         = as.numeric(as.factor(munip_name))
+, temp           = temp
+, precip         = precip
+, pop            = pop
+, gdp            = gdp
+, area           = area
+, ag             = ag
+, ndvi           = ndvi
+, year           = year + abs(min(year)) + 1
+, max_year       = max(year + abs(min(year)) + 1)
+  ))
+  
+stan.data <- c(stan.data
+  , with(VL.stan.F_data
+    , list(
+  temp_out_mean    = temp_out_mean
+, precip_out_mean  = precip_out_mean
+, pop_out_mean     = pop_out_mean
+, gdp_out_mean     = gdp_out_mean
+, area_out_mean    = area_out_mean
+, ag_out_mean      = ag_out_mean
+, ndvi_out_mean    = ndvi_out_mean
+, temp_out_sd      = temp_out_sd
+, precip_out_sd    = precip_out_sd
+, pop_out_sd       = pop_out_sd  + 0.1    ## Not an optimal decision, just wanting to get this up and running
+, gdp_out_sd       = gdp_out_sd 
+, area_out_sd      = area_out_sd + 0.1
+, ag_out_sd        = ag_out_sd
+, ndvi_out_sd      = ndvi_out_sd
+    )
+  ))
+
+stan.data$ag_out_sd[which(stan.data$ag_out_sd == 0)] <- 0.1
+
+stan.data <- c(stan.data
+ , list(
+    N_out          = nrow(VL.stan.F_data) * 2
+  , N_loc_out      = length(unique(VL.stan.F_data$munip_name))
+  , loc_id_out     = rep(as.numeric(as.factor(VL.stan.F_data$munip_name)), each = 2)
+  )
+)
+```
 
 ```{r}
 
+## Run the model (only with one chain because it takes forever, load a previously run model if possible): \
+ ## (This model takes quite a long time to run)
+if (file.exists("NB.ZI.F.S.stan.Rds")) {
+  
+stan.fit <- readRDS("NB.ZI.F.S.stan.Rds")
+  
+} else {
+
+stan.fit <- stan(
+  file    = "stan_models/NB.ZI.F.S.stan"
+, data    = stan.data
+, chains  = 1
+, iter    = ni
+, warmup  = nb
+, thin    = nt
+, init    = list(
+   ## With the generated quantities for the out of sample predictions need to 
+    ## start the variance terms in a reasonable location
+   ## For safety also starting the squared terms at the center of the prior (zero)
+  list(
+    reciprocal_phi     = .1
+  , sigma_alpha_lambda = .3
+  , sigma_alpha_theta  = .3
+    
+  , alpha_lambda_bar   = -1
+  , alpha_theta_bar    = 0
+    
+  , gdp_theta_bar      = 0
+    
+  , temp_lambda_bar      = 0
+  , temp_lambda_bar_sq   = 0
+  , precip_lambda_bar    = 0
+  , precip_lambda_bar_sq = 0
+  , pop_lambda_bar       = 0
+  , pop_lambda_bar_sq    = 0
+  , area_lambda_bar      = 0
+  , area_lambda_bar_sq   = 0
+  , ag_lambda_bar        = 0
+  , ndvi_lambda_bar      = 0
+  , ndvi_lambda_bar_sq   = 0
+    
+  , eps_alpha_theta    = rep(0, stan.data$N_loc)
+  , eps_alpha_lambda   = rep(0, stan.data$N_loc)
+    
+  , eps_year_deltas    = matrix(data = 0, nrow = stan.data$N_loc, ncol = stan.data$max_year - 1)
+  , real_deltas_bar    = rep(0, stan.data$max_year)
+  , delta_sigma        = .3
+  , sigma_year_lambda  = .3
+    
+  ))
+, seed    = 1008
+## If issues arise can just give certain parameters for tracking for ease of use with shinystan
+#, pars    = c(
+#  "reciprocal_phi"
+#, "phi"
+#, "lambda_log"
+#, "lambda_log_out"
+#, "mu_out"
+#, "mu"
+#, "y_sim"
+#, "y_sim_out"
+#)
+, control = list(
+    adapt_delta = 0.95
+  , max_treedepth = 12
+  ))
+
+}
+
+stan.fit.summary <- summary(stan.fit)[[1]]
 ```
 
-Run the model (only with one chain because it takes forever): \
+Save the diagnostics for shinystan but at least plot some output. Histogram of location-specific intercept deviates: \
 
 ```{r}
-
+hist(
+  summary(stan.fit)[[1]][grep("eps_alpha_lambda", dimnames(summary(stan.fit)[[1]])[[1]]), ][, 1] *
+  summary(stan.fit)[[1]][grep("sigma_alpha_lambda", dimnames(summary(stan.fit)[[1]])[[1]]), 1]
+, breaks = 50
+)
 ```
-
-Save the diagnostics for shinystan but at least plot some output: \
 
 ```{r}
+stan.fit.summary.coef <- as.data.frame(stan.fit.summary[c(1:14
+  , grep("sigma_alpha_lambda", dimnames(summary(stan.fit)[[1]])[[1]])
+  , grep("sigma_year_lambda", dimnames(summary(stan.fit)[[1]])[[1]]))
+  , c(4:8)])
+stan.fit.summary.coef <- stan.fit.summary.coef %>% mutate(param = rownames(.))
+names(stan.fit.summary.coef) <- c("lwr_w", "lwr_n", "mid", "upr_n", "upr_w", "param")
+stan.fit.summary.coef <- stan.fit.summary.coef %>%
+  arrange(param) %>% 
+  mutate(param = factor(param, levels = rev(param)))
+stan.fit.summary.coef <- stan.fit.summary.coef %>% 
+  mutate(
+    param_type    = c(c("slope", "int", "int"), rep("slope", 9), rep("var", 2), rep("slope", 2))
+  )
+stan.fit.summary.coef <- stan.fit.summary.coef %>% mutate(model_portion = "")
+stan.fit.summary.coef$model_portion[grep("lambda", stan.fit.summary.coef$param)] <- "count"
+stan.fit.summary.coef$model_portion[grep("phi", stan.fit.summary.coef$param)]    <- "count"
+stan.fit.summary.coef$model_portion[grep("theta", stan.fit.summary.coef$param)]  <- "prob"
+
+stan.fit.summary.coef <- stan.fit.summary.coef %>%
+  mutate(param = plyr::mapvalues(param
+    , from = param
+    , to   = c(
+      "Agriculutre (linear)"
+    , "Intercept (count)"
+    , "Intercept (prob)"
+    , "Area (linear)"
+    , "Area (sq)"
+    , "GDP (linear)"
+    , "NDVI (linear)"
+    , "NDVI (sq)"
+    , "Population (linear)"
+    , "Population (sq)"
+    , "Precipitation (linear)"
+    , "Precipitation (sq)"
+    , "Random intercept variance (prob)"
+    , "Random year variance (count)"
+    , "Temperature (mean) (linear)"
+    , "Temperature (mean) (sq)"
+    )))
 
 ```
 
+Some coefficients: \
 
+```{r}
+stan.fit.summary.coef %>% filter(param_type == "slope") %>% arrange(mid) %>%
+  mutate(param = factor(param, levels = param)) %>% {
+
+ggplot(., aes(mid, param)) + 
+  geom_point() +
+  geom_errorbarh(aes(xmin = lwr_w, xmax = upr_w), height = 0.3) +
+  ylab("Parameter") +
+  xlab("Estimate") +
+  geom_vline(xintercept = 0, linetype = "dotted", lwd = 1)
+    
+}
+
+```
+
+```{r}
+stan.fit.summary <- summary(stan.fit)[[1]]
+pred.out <- stan.fit.summary[grep("y_sim_out", dimnames(stan.fit.summary)[[1]]), ]
+pred.out <- pred.out[, c(4, 8)]
+pred.out <- data.frame(pred.out)
+names(pred.out) <- c("lwr", "upr")
+pred.out <- pred.out %>% mutate(
+  year = rep(c(max(VL.year$year) + 1, max(VL.year$year) + 2)
+    , length(unique(VL.year$munip_name)))
+, munip_name = rep(unique(VL.year$munip_name), each = 2))
+
+## Only plot a few random locations to not overload ggplot
+randplotloc <- sample(seq(1, length(unique(VL.year$munip_name))), 30)
+randplotloc <- unique(VL.year$munip_name)[randplotloc]
+```
+
+Some forecasts for a few locations: \
+
+```{r}
+VL.year %>% filter(munip_name %in% randplotloc) %>% 
+  droplevels() %>% {
+ ggplot(.) + geom_point(aes(year, vl_cases)) +
+    facet_wrap(~munip_name) +
+    geom_errorbar(
+      data = (pred.out %>% filter(munip_name %in% randplotloc))
+    , aes(year, ymin = lwr, ymax = upr)
+    , color = "red"
+    , lwd = 0.5
+    , width = 0.2
+    , position = position_dodge2(width = 1)
+    ) + scale_y_log10() +
+      scale_x_continuous(breaks = c(
+        2007, 2009, 2011, 2013, 2015, 2017
+      )) +
+      theme(
+    legend.key.size = unit(.65, "cm")
+  , legend.title = element_text(size = 12)
+  , legend.text = element_text(size = 14)
+  , legend.background = element_blank()
+  , axis.text.x = element_text(size = 10, angle = 310, hjust = 0) 
+  , axis.text.y = element_text(size = 12) 
+  , axis.title.x = element_text(size = 12) 
+  , axis.title.y = element_text(size = 12)
+  )
+  }
+```
