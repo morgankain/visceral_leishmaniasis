@@ -1,0 +1,744 @@
+---
+title: "Mixed model in Stan: An example using visceral leishmaniasis"
+author: "Morgan Kain"
+date: "6/21/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, verbose = FALSE, comment = FALSE, error = FALSE, message = FALSE)
+```
+
+##### This document works through a simple Stan mixed model and a more complicate/expanded version of that model. The R script "VL_stan.R" constructs these and all intermediate models step-by-step. For all models but less exposition see that R script. This document gives more details (some of the rationale for the choice I made, some diagnostics, etc.) but for fewer models. 
+
+##### This document is organized to focus first on visceral leishmaniasis science/modeling, but also includes substantial detail about the stan models.
+
+### This project has two primary goals: 
+1. Parameter estimates: Quantify the drivers of counts of visceral leishmaniasis in Brazil \
+2. Forecasting: Predict the number of cases of visceral leishmaniasis in each municiplaity in Brazil two years into the future \
+
+To achieve these goals I have decided on using a statistical approach. Specifically, a mixed model to capture variation due to unmeasured covariates in the 5,570 Brazilian municipalities. This model also:
+
+* Uses a zero-inflated negative binomial error distribution, which can capture the abundance of zeroes in the data. A zero-inflated model combines a probability distribution (binomial) with a count distribution (here negative binomial). In brief, each outcome (VL count) is modeled as a draw from the count distribution, conditioned on a 1 being drawn from the binomial distribution (more on this later). This method can be used as a method of separating "true" or "structural" zeros from zeros arising from the count distribution. One interpretation of a location with an overall high probability of a binomial zero (at which point the count distribution is not sampled from) is that that location is poorly suited for visceral leishmaniasis. Alternatively, a location with a moderate probability of a binomial draw of a one on average, but a low negative binomial mean in a given year suggests a location of moderate suitability overall but a year with (for w/e reason) a low predicted number of VL cases. \
+
+* Is written in a Bayesian context, primary for its flexibility, but also as a method for convenient error propagation when forecasting (e.g., the ability to mix uncertainty in fitted values with uncertainty in the covariates in the future -- more on this later). \
+
+Again, this script will cover the simple scaffold of the model, as well as a nearly complete model. For all of the models inbetween these two see "VL_stan.R" \
+
+```{r}
+## Bulk install all needed missing packages (TRUE) or just print those not installed (FALSE)
+inst_miss_pack <- FALSE         
+## Load packages, helper functions, and data
+source("packages_functions.R", local = knitr::knit_global()) 
+```
+
+```{r}
+## Run a small sample model with only a subset of the data for debugging and development purposes? 
+debug.stan.model <- TRUE  
+## If TRUE:
+deubg.top_samps  <- 50    ## Include the top X municipalities by cases 
+debug.ran_samps  <- 100   ## Include Y random municipalities
+set.seed(10003)           ## Set a seed to pick these random municipalities for reproducibility
+## MCMC settings
+ni <- 1500                ## number of iterations per chain. 1500 is what I have been using for debug and development
+                           ## For the final version this should probably be around 12,000
+nt <- 1                   ## thinning (1 = keep all samples). NOTE: there is definitely some auto-correlation in the later models
+                           ## For the final version this should probably be at least 5
+nb <- 500                 ## burn-in (number of initial samples to throw out)
+                           ## For the final verison this should probably be about 2000, with nt = 5 and ni = 12,000
+nc <- 3                   ## number of chains (3 or 4 is usually sensible, 1 is ok for quick debugging)
+
+## If true, produce histograms of the predictors
+print.predictors <- TRUE    
+```
+
+We will start with a negative binomial model ("Simple2_NB" in the folder stan_models) with only random intercepts and relatively few covaraties. The model will print piece by piece here to introduce the unique stan syntax (though the saved "Simple2_NB.stan" will be used to actually run the model) \
+
+First though we can take a peek at the data and covariates, clean the data, and put it into the form that the stan model needs \
+
+```{r}
+if (print.predictors) {
+  
+## Yes, non-dynamic, but w/e
+all.covar <- names(VL)[c(7:25, 28)][-c(8, 12)]
+
+for (i in seq_along(all.covar)) {
+  
+temp.VL <- VL %>% group_by(munip_name) %>% summarize(mean_val = mean(get(all.covar[i]), na.rm = T)) 
+temp.gg <- ggplot(temp.VL, aes(x = mean_val)) + 
+  geom_histogram(bins = 100) +
+  scale_x_log10() +
+  xlab(all.covar[i])
+  
+temp_name <- paste("temp.gg", i, sep = "_")
+assign(temp_name, temp.gg)
+
+}
+
+gridExtra::grid.arrange(
+  temp.gg_1, temp.gg_2, temp.gg_3, temp.gg_4, temp.gg_5, temp.gg_6
+, temp.gg_7, temp.gg_8, temp.gg_9, temp.gg_10, temp.gg_11, temp.gg_12
+, temp.gg_13, temp.gg_14, temp.gg_15, temp.gg_16, temp.gg_17, temp.gg_18, ncol = 5)
+
+}
+```
+
+##### For this model we will just focus on yearly cases of VL in each municipality, averaging the predictors and summing the counts over months
+
+```{r, echo = TRUE}
+## For the first few models with the smallest number of covariates, just using the following covariates,
+ ## summarized over months:
+VL.year <- VL %>% group_by(munip_name, year) %>% 
+  summarize(
+    vl_cases    = sum(vl_cases)
+  , mean_temp   = mean(mean_air_temp)
+  , mean_precip = mean(total_precipitation)
+  , mean_pop    = mean(log10(human_pop))
+  , mean_GDP    = mean(log10(GDP_1000s_R))
+    ) %>% filter(munip_name != "") %>%
+  mutate(mean_year = as.numeric(year))
+
+## Cant have NA's so drop all of those
+VL.year <- VL.year %>% drop_na() %>% ungroup()
+
+## If debugging, run the model with only a few locations
+if (debug.stan.model) {
+  
+## Pick a few of the locations with the largest numbers of cases
+top_locs  <- VL %>% group_by(munip_name) %>% summarize(tot_cases = sum(vl_cases)) %>% 
+  arrange(desc(tot_cases)) %>% slice(1:deubg.top_samps) %>% dplyr::select(munip_name) %>% unname() %>% unlist()
+
+## And a random smattering of other locations
+rand_locs <- VL %>% group_by(munip_name) %>% summarize(tot_cases = sum(vl_cases)) %>% 
+  arrange(desc(tot_cases)) %>% filter(munip_name %notin% top_locs) %>% dplyr::select(munip_name) %>% unname() %>% 
+  unlist() %>% sample(debug.ran_samps)
+ 
+rand_locs <- c(rand_locs, top_locs)
+
+VL.year <- VL.year %>% filter(munip_name %in% rand_locs)
+
+}
+```
+
+To compare the importance of individual predictors scale them \
+
+```{r}
+## Scale all the predictors, only center for year
+VL.stan <- VL.year %>% mutate(
+    year   = c(scale(mean_year, scale = F))
+  , precip = c(scale(mean_precip, scale = T))
+  , temp   = c(scale(mean_temp, scale = T))
+  , pop    = c(scale(mean_pop, scale = T))
+  , gdp    = c(scale(mean_GDP, scale = T)))
+
+## Stan data requires a list
+stan.data   <- with(
+    VL.stan
+  , list(
+  N              = nrow(VL.stan)
+, y              = vl_cases
+, N_loc          = length(unique(munip_name))
+, loc_id         = as.numeric(as.factor(munip_name))
+, temp           = temp
+, precip         = precip
+, year           = year
+, pop            = pop
+  ))
+
+```
+
+One method of debugging the first-level Bayesian model is to compare the predictions to a Frequentist model fit with a canned package. To do so we will also fit the simple model using lme4. We will do this first to see the model in what may be a more familiar form: \
+
+```{r, echo = T}
+## This model assumes a linear relationship between a few covariates and VL cases and allows the slope of cases over time to vary by municipality
+test.nb.s <- glmer.nb(
+  vl_cases ~ year + temp + precip + pop + (1 + year | munip_name)
+  , data = VL.stan
+  )
+```
+
+### A stan model includes all of the following blocks (for the complete model see "stan_models/Simple2_NB.stan"):
+
+First, all data used in the model must be specified in a "data" block (note: many, many details about these data types can be found in the stan manual): \
+
+```{r, echo = T, eval = F}
+"
+data {
+
+// data structure
+int<lower=0> N;                    // number of observations
+int<lower=0> y[N];                 // VL case counts
+
+// bookkeeping for the random effects
+int<lower=0> N_loc;		             // number of locations where counts are repeated (for the random effect)
+int<lower=0> loc_id[N];	           // ID of each location 
+    
+// covariates
+vector[N] temp;                    // temperature
+vector[N] precip;                  // precipitation
+vector[N] year;                    // year
+vector[N] pop;                     // population size
+
+ }
+"
+```
+
+Second, all parameters in the model are declared in a "parameters" block: \
+
+```{r, echo = T, eval = F}
+"
+parameters {
+
+// intercept and slope coefficients
+real alpha_lambda_bar;                 // intercept for count piece  
+real temp_lambda_bar;                  // slope coefficients for probability piece
+real precip_lambda_bar;       
+real year_lambda_bar;   
+real pop_lambda_bar;   
+
+// negative binomial variance (inverse, helps fitting)
+real<lower=0> reciprocal_phi;
+
+// random effect structure  
+real<lower=0> sigma_alpha_lambda;      // estimated variation among locations in the intercept (count)
+vector[N_loc] eps_alpha_lambda;        // deviates for each place drawn from sigma_alpha (count)
+
+real<lower=0> sigma_year_lambda;       // estimated variation among locations in slopes (count)
+vector[N_loc] eps_year_lambda;         // deviates for each place drawn from the sigma_beta values (count)
+
+}
+"
+```
+
+Third, any derived parameters (e.g., linear predictors) are included in the "transformed parameters" block: \
+
+```{r, echo = T, eval = F}
+"
+transformed parameters {
+
+real lambda_log[N];                   // linear predictor for count piece
+
+real alpha_lambda[N_loc];             // location-specific intercepts for counts
+real year_lambda[N_loc];              // location-specific year slopes
+
+real<lower=0> phi;                    // negative binomial variance
+
+// set up the location-specific deviates. Non-Centered Parameterization that can often help fitting: see Section 21.7 in the Stan Users Guide
+for (i in 1:N_loc) {
+ alpha_lambda[i] = alpha_lambda_bar + sigma_alpha_lambda * eps_alpha_lambda[i];
+ year_lambda[i] = year_lambda_bar + sigma_year_lambda * eps_year_lambda[i];
+}  
+
+// The linear predictor for each data point
+for (j in 1:N) {
+ lambda_log[j] = alpha_lambda[loc_id[j]] + 
+    temp_lambda_bar * temp[j] +
+    precip_lambda_bar * precip[j] +
+    year_lambda[loc_id[j]] * year[j] +
+    pop_lambda_bar * pop[j];
+}
+
+phi = 1. / reciprocal_phi;
+
+}
+"
+```
+
+Fourth, the model itself is written out in a "model" block: \
+
+```{r, echo = T, eval = F}
+"
+model {
+
+// priors. Break up the beta's according to some other independent data sources...
+
+// fixed effects
+   alpha_lambda_bar ~ normal(0, 3);
+   temp_lambda_bar ~ normal(0, 3);
+   year_lambda_bar ~ normal(0, 3);
+   precip_lambda_bar ~ normal(0, 3);
+   pop_lambda_bar ~ normal(0, 3);
+
+// random effects
+   sigma_alpha_lambda ~ cauchy(0, 5);
+   sigma_year_lambda ~ cauchy(0, 5);
+
+   eps_alpha_lambda ~ normal(0, 1);
+   eps_year_lambda ~ normal(0, 1);
+
+   reciprocal_phi ~ cauchy(0., 5);
+
+// modify the likelihood (see the Stan User's Guide for details on this statement. But in brief, this line essentially says: modify the likelihood for data point n using the log negative binomial probability mass given the data conditioned on the location parameter lambda_log and the dispersion phi)
+   for (n in 1:N) {
+         
+   target += neg_binomial_2_log_lpmf(y[n] | lambda_log[n], phi);
+
+}
+
+}
+"
+```
+
+Fifth, any predictions are written out in a "generated quantities" block (note, I do not use this block in this model but do so in the subsequent model): \
+
+```{r, echo = T, eval = F}
+"
+generated quantities {
+
+// for simulating values
+
+}
+"
+```
+
+Run the model: \
+
+```{r, echo = T}
+
+stan.fit <- stan(
+  file    = "stan_models/Simple2_NB.stan"
+, data    = stan.data
+, chains  = nc  ## Should be 3 or 4 for inference. Just using 1 here for speed
+, iter    = ni  ## Should be big enough to get an effective sample size for all parameters to about 1000
+, warmup  = nb
+, thin    = nt  ## A larger number is needed the more autocorrelation present among sequential samples
+, seed    = 1001
+, control = list(
+    adapt_delta = 0.95  ## For details on these parameters see the Stan manual. These modify the sampling algorithm. Often the defaults are fine (these are a bit larger than the defaults)
+  , max_treedepth = 12
+  ))
+
+```
+
+A few quick debugging steps for the stan model include: \
+1. Checking for mixing of the chains: look for overlap of all chains; they should look like white noise with no pattern or drifitng; R hat at least less than 1.05 (preferably 1.01) \
+2. Enough samples: look for effective sample size for all parameters of 1000 or more \
+3. No divergent transitions (this is quite deep and beyond the scope of this document. Do some googling and read some more in-depth tutorials for dealing with divergent transitions) \
+4. Unimodal posterior distributions (dealing with bimodal or other forms of ugly distributions is also a bit beyond the scope) \
+5. Compare priors to posterios to check for information content of the model \
+
+These things can be checked manually (in a beautified way for supplemental plots this can be cumbersome, but some quick and dirty diagnostics are pretty fast) or using the extremely pleasant shinystan::launch_shinystan(model) \
+
+```{r}
+## To do it manually in a beautified way, extract and plot the chains
+stan.fit.samples <- extract(stan.fit)
+
+## need to look at all parameters, but just checking one here. This is a bit ugly and not really the
+ ## way you would want to do this on a larger scale
+stan.fit.samples <- data.frame(
+  iter  = rep(1:((ni - nb)/nt), nc)
+, chain = rep(seq(1:nc), each = ((ni - nb)/nt))
+, samp  = stan.fit.samples$alpha_lambda_bar)
+
+ggplot(stan.fit.samples) + geom_path(aes(iter, samp, colour = as.factor(chain))) +
+  xlab("Iteration") + ylab("Sample Value") + scale_color_brewer(palette = "Dark2", name = "Chain")
+
+## This could also be done in a more dynamic way with some clean R coding (setting up a data frame of prior parameters and then apply-ing over the names of the posterior to set up a data frame of posterior and prior). But for now just compare one parameter to get the point across
+stan.fit.prior <- data.frame(
+  iter = seq(1, (ni - nb) * nc)
+, samp = rnorm((ni - nb) * nc, 0, 3)
+)
+
+## Blue is posterior red is prior
+ggplot(stan.fit.samples) + 
+  geom_density(aes(x = samp), colour = "dodgerblue3", lwd = 2) +
+  geom_density(data = stan.fit.prior, aes(x = samp), colour = "firebrick3", lwd = 2) +
+ xlab("Value") + ylab("Density")
+
+## also check for divergent transitions and convergence of the chains
+chains_for_diag <- matrix(stan.fit.samples$samp, nrow = (ni - nb), ncol = nc, byrow = F)
+Rhat(chains_for_diag)
+ess_bulk(chains_for_diag)
+
+```
+Compare the stan and lme4 coefficients and location-specific deviates: \
+
+```{r, echo = T}
+
+## quick and dirty method of CI
+lm_coef <- summary(test.nb.s)$coefficients
+compare_coef <- data.frame(
+  param     = rep(c("int", "year", "temp", "precip", "pop"), 2)
+, model     = c(rep("lme4", 5), rep("stan", 5))
+, freq_upr  = c(lm_coef[, 1] + lm_coef[, 2] * 1.96, summary(stan.fit)[[1]][c(1, 4, 2, 3, 5), 4])
+, freq_lwr  = c(lm_coef[, 1] - lm_coef[, 2] * 1.96, summary(stan.fit)[[1]][c(1, 4, 2, 3, 5), 8])
+)
+
+## Extremely similar coefficient estimates
+ggplot(compare_coef) + 
+  geom_errorbar(aes(x = param, ymin = freq_lwr, ymax = freq_upr, colour = model), lwd = 1, width = 0.3) +
+  geom_hline(yintercept = 0, linetype = "dashed")
+
+## Very similar location intercept deviates
+plot(
+cbind(
+  summary(stan.fit)[[1]][grep("eps_alpha_lambda", dimnames(summary(stan.fit)[[1]])[[1]]), ][, 1] *
+  summary(stan.fit)[[1]][grep("sigma_alpha_lambda", dimnames(summary(stan.fit)[[1]])[[1]]), ][1]
+, getME(test.nb.s, "b")[seq(1, nrow(getME(test.nb.s, "b")), by = 2), 1])
+); abline(a = 0, b = 1)
+
+## and very similar location slope deviates
+plot(
+cbind(
+  summary(stan.fit)[[1]][grep("eps_year_lambda", dimnames(summary(stan.fit)[[1]])[[1]]), ][, 1] *
+  summary(stan.fit)[[1]][grep("sigma_year_lambda", dimnames(summary(stan.fit)[[1]])[[1]]), 1]
+, getME(test.nb.s, "b")[seq(2, nrow(getME(test.nb.s, "b")), by = 2), 1])
+); abline(a = 0, b = 1)
+```
+
+##### The next model ("stan_models/NB.ZI.F.S.stan") jumps _many_ steps and includes:
+
+1. Covariates and random effects in the binomial piece of the model \
+2. A smoothing term (spline) over years that vary by location \
+3. Forcasting for two years \
+(for a complete list of changes see "VL_stan.R")
+
+The full model looks like this: \
+
+```{r, echo = T, eval = F}
+"
+
+data {
+
+  // ** In sample bookkeeping **
+  int<lower=0> N;                      // number of observations
+  int<lower=0> y[N];                   // VL case counts
+  int<lower=0> N_loc;		               // number of locations where counts are repeated (for the random effect)
+  int<lower=0> loc_id[N];	             // ID of each location 
+
+  // ** In sample covariates ** 
+  vector[N] temp;                      // temperature
+  vector[N] precip;                    // precipitation
+  vector[N] pop;                       // population
+  vector[N] gdp;                       // gdp
+  vector[N] area;                      // area
+  vector[N] ag;                        // ag
+  vector[N] ndvi;                      // ndvi
+
+  int<lower=0> year[N];                // year
+  int<lower=0> max_year;               // the largest year index (for the spline)
+  
+  // ** Out of Sample bookkeeping
+  int<lower=0> N_out;                  // number of observations for out of sample predictions
+  int<lower=0> N_loc_out;	             // number of locations where counts are repeated (for the random effect) for out of sample predictions
+  int<lower=0> loc_id_out[N_out];      // ID of each location for out of sample predictions
+    
+  // ** Out of Sample -covariates-
+  vector[N_loc_out] temp_out_mean;              // temperature
+  vector[N_loc_out] precip_out_mean;            // precipitation
+  vector[N_loc_out] pop_out_mean;               // population
+  vector[N_loc_out] gdp_out_mean;               // gdp
+  vector[N_loc_out] area_out_mean;              // area
+  vector[N_loc_out] ag_out_mean;                // ag
+  vector[N_loc_out] ndvi_out_mean;              // ndvi
+
+  vector[N_loc_out] temp_out_sd;                // temperature
+  vector[N_loc_out] precip_out_sd;              // precipitation
+  vector[N_loc_out] pop_out_sd;                 // population
+  vector[N_loc_out] gdp_out_sd;                 // gdp
+  vector[N_loc_out] area_out_sd;                // area
+  vector[N_loc_out] ag_out_sd;                  // ag
+  vector[N_loc_out] ndvi_out_sd;                // ndvi
+
+}
+
+parameters {
+
+  // ** Fixed Effects **
+
+  // ** Intercepts ** 
+  real alpha_theta_bar;                // -grand- (given the presence of a random effect, using this language) intercept for probability piece 
+  real alpha_lambda_bar;               // -grand- intercept for count piece
+
+  // ** Slopes (linear terms) **
+
+  // ** probability piece **
+  real gdp_theta_bar;                  // all -grand- slopes follow: COVARIATE_MODEL PIECE_bar
+
+  // ** count piece **
+  real temp_lambda_bar;               
+  real precip_lambda_bar;         
+  real pop_lambda_bar;
+  real area_lambda_bar;
+  real ag_lambda_bar;
+  real ndvi_lambda_bar;
+
+  // ** Slopes (higher order terms) **
+
+  // ** count piece **
+  real temp_lambda_bar_sq;                 // all higher-order polynomials have the details as the last piece, i.e. XXXX_sq for a squared term
+  real precip_lambda_bar_sq;
+  real pop_lambda_bar_sq;
+  real area_lambda_bar_sq;
+  real ndvi_lambda_bar_sq;
+
+  vector[max_year-1] year_deltas_bar;      // Year_deltas shorter than max_years, because the first delta logically has to be 0
+
+  // ** Variance/Dispersion **
+  real<lower=0, upper=20> reciprocal_phi;  // putting an upper bound for constraints (20 is _really_ big)
+
+  real<lower=0, upper=10> delta_sigma;     // Ghitza & Gelman used normal(delta[i-1],1) for sampling deltas, but that can lead to overfitting, so use a hyperprior
+
+  // ** Random Effects, Non-Centered Parameterization, see Section 21.7 in the Stan Users Guide **
+
+  // ** intercepts **
+  real<lower=0> sigma_alpha_theta;         // estimated variation among locations in the intercept (probability)
+  vector[N_loc] eps_alpha_theta;           // deviates for each place drawn from sigma_alpha (probability)
+
+  real<lower=0> sigma_alpha_lambda;        // estimated variation among locations in the intercept (count)
+  vector[N_loc] eps_alpha_lambda;          // deviates for each place drawn from sigma_alpha (count)
+
+  // ** slopes **
+  real<lower=0> sigma_year_lambda;       // estimated variation among locations in the year variation (count)
+  matrix[N_loc, max_year-1] eps_year_deltas;
+
+  // ** Out of sample -covariates- ** 
+
+  vector[N_loc_out] temp_out;              // temperature
+  vector[N_loc_out] precip_out;            // precipitation
+  vector[N_loc_out] pop_out;               // population
+  vector[N_loc_out] gdp_out;               // gdp
+  vector[N_loc_out] area_out;              // area
+  vector[N_loc_out] ag_out;                // ag
+  vector[N_loc_out] ndvi_out;              // ndvi
+
+}
+
+transformed parameters {
+
+  // ** random effect deviates **
+  real alpha_theta[N_loc];                  // location-specific intercepts for probability piece
+  real alpha_lambda[N_loc];                 // location-specific intercepts for counts
+
+  // ** linear predictors for probability **
+  real<lower=0, upper=1> theta[N];          // linear predictor for probability piece
+  real<lower=0, upper=1> theta_out[N_out];  // linear predictor for probability piece
+
+  real inv_theta[N];                        // linear predictor for probability piece
+  real inv_theta_out[N_out];                // linear predictor for probability piece
+
+  // ** linear predictors for count **
+  real lambda_log[N];                       // linear predictor for count piece
+  real lambda_log_out[N_out];               // linear predictor for count piece for out of sample predictions
+
+  // ** year smoother setup **
+  matrix[N_loc, max_year] year_mu;          // year_mu will be the modeled effect of year on VL count at each year
+  vector[max_year] real_deltas_bar;         // real_deltas is just year_deltas with 0 concatenated to the front
+  matrix[N_loc, max_year] real_deltas_eps;  // random deviates
+
+  // ** dispersion, variance terms **
+  real phi;                                 // Dispersion of negative binomial
+
+  real_deltas_bar[1] = 0.0;
+
+  for (i in 1:N_loc) {
+    real_deltas_eps[i, 1] = 0.0;
+  }
+
+  for(i in 1:(max_year-1)) {
+    real_deltas_bar[i+1] = year_deltas_bar[i];
+    real_deltas_eps[, i+1] = eps_year_deltas[, i];
+   }
+
+  // The trick here is to use cumulative sum of deltas (which are the year to year individual smoothing terms)
+  for (i in 1:N_loc) {
+    year_mu[i, ] = to_row_vector(cumulative_sum(real_deltas_bar + sigma_year_lambda * to_vector(real_deltas_eps[i, ])));  
+  }
+
+  // ** Build the linear predictors  **
+
+for (i in 1:N_loc) {
+
+  alpha_theta[i] = alpha_theta_bar + sigma_alpha_theta * eps_alpha_theta[i];
+  alpha_lambda[i] = alpha_lambda_bar + sigma_alpha_lambda * eps_alpha_lambda[i];
+ 
+}    
+
+  // ** in sample (fitting) ** 
+
+for (j in 1:N) {
+
+  lambda_log[j] = alpha_lambda[loc_id[j]] + 
+    temp_lambda_bar * temp[j] +
+    temp_lambda_bar_sq * square(temp[j]) +
+    precip_lambda_bar * precip[j] +
+    precip_lambda_bar_sq * square(precip[j]) +
+    pop_lambda_bar * pop[j] +
+    pop_lambda_bar_sq * square(pop[j]) +
+    area_lambda_bar * area[j] +
+    area_lambda_bar_sq * square(area[j]) +
+    ag_lambda_bar * ag[j] +
+    ndvi_lambda_bar * ndvi[j] +
+    ndvi_lambda_bar_sq * square(ndvi[j]) +
+    year_mu[loc_id[j], year[j]];  
+
+  inv_theta[j] = alpha_theta[loc_id[j]] + gdp_theta_bar * gdp[j];
+
+}
+
+  theta = inv_logit(inv_theta);
+
+  // ** out of sample (predicting) ** 
+
+for (jj in 1:N_out) {
+
+  lambda_log_out[jj] = alpha_lambda[loc_id_out[jj]] + 
+    temp_lambda_bar * temp_out[loc_id_out[jj]] +
+    temp_lambda_bar_sq * square(temp_out[loc_id_out[jj]]) +
+    precip_lambda_bar * precip_out[loc_id_out[jj]] +
+    precip_lambda_bar_sq * square(precip_out[loc_id_out[jj]]) +
+    pop_lambda_bar * pop_out[loc_id_out[jj]] +
+    pop_lambda_bar_sq * square(pop_out[loc_id_out[jj]]) +
+    area_lambda_bar * area_out[loc_id_out[jj]] +
+    area_lambda_bar_sq * square(area_out[loc_id_out[jj]]) +
+    ag_lambda_bar * ag_out[loc_id_out[jj]] +
+    ndvi_lambda_bar * ndvi_out[loc_id_out[jj]] +
+    ndvi_lambda_bar_sq * square(ndvi_out[loc_id_out[jj]]) +
+    year_mu[loc_id_out[jj], max_year];                            // Use the last cumulative year smooth for forward projecting; 
+
+  inv_theta_out[jj] = alpha_theta[loc_id_out[jj]] + gdp_theta_bar * gdp_out[loc_id_out[jj]];
+
+}
+
+  theta_out = inv_logit(inv_theta_out);
+
+  phi = 1. / reciprocal_phi;
+
+}
+
+model {
+
+// ** Priors. ** 
+
+// ** Fixed effects **
+   alpha_theta_bar ~ normal(0, 3);
+   gdp_theta_bar ~ normal(0, 3);
+
+   alpha_lambda_bar ~ normal(0, 2);
+
+   temp_lambda_bar ~ normal(0, 3);
+   precip_lambda_bar ~ normal(0, 3);
+   pop_lambda_bar ~ normal(0, 3);
+   area_lambda_bar ~ normal(0, 3);
+   ag_lambda_bar ~ normal(0, 3);
+   ndvi_lambda_bar ~ normal(0, 3);
+
+   temp_lambda_bar_sq ~ normal(0, 1);
+   precip_lambda_bar_sq ~ normal(0, 1);
+   pop_lambda_bar_sq ~ normal(0, 1);
+   area_lambda_bar_sq ~ normal(0, 1);
+   ndvi_lambda_bar_sq ~ normal(0, 1);
+
+   // year smoother: The first time_delta should be less constrained than the rest. delta_sigma could be very small,
+    // and if so, the subsequent delta values would be constrained to be too close to 0.
+    year_deltas_bar[1] ~ normal(0, 3);
+
+    for(i in 2:(max_year-1)) {
+      year_deltas_bar[i] ~ normal(year_deltas_bar[i-1], delta_sigma);
+    }
+
+// ** Out of sample -covariates- **
+ 
+for (i in 1:N_loc_out) {
+ temp_out[i] ~ normal(temp_out_mean[i], temp_out_sd[i]);
+ precip_out[i] ~ normal(precip_out_mean[i], precip_out_sd[i]);
+ pop_out[i] ~ normal(pop_out_mean[i], pop_out_sd[i]);
+ gdp_out[i] ~ normal(gdp_out_mean[i], gdp_out_sd[i]);
+ area_out[i] ~ normal(area_out_mean[i], area_out_sd[i]);
+ ag_out[i] ~ normal(ag_out_mean[i], ag_out_sd[i]);
+ ndvi_out[i] ~ normal(ndvi_out_mean[i], ndvi_out_sd[i]);
+}
+
+// ** Random effects **
+
+   sigma_alpha_theta ~ inv_gamma(3.5, 1);
+   eps_alpha_theta ~ normal(0, 1);
+
+   sigma_alpha_lambda ~ inv_gamma(3.5, 1);
+   eps_alpha_lambda ~ normal(0, 1);
+
+   sigma_year_lambda ~ inv_gamma(1, 1);
+
+   for (i in 1:N_loc) {
+     eps_year_deltas[i, ] ~ normal(0, 1);
+   }
+
+   reciprocal_phi ~ inv_gamma(3.5, 1);
+
+
+// ** modify the likelihood **
+   
+for(n in 1:N) {
+    
+if (y[n] == 0) {
+     
+      target += log_sum_exp(bernoulli_lpmf(1 | theta[n]),                 
+                             bernoulli_lpmf(0 | theta[n])
+                           + neg_binomial_2_log_lpmf(y[n] | lambda_log[n], phi));
+
+
+    } else {
+
+      target += bernoulli_lpmf(0 | theta[n])                              
+                  + neg_binomial_2_log_lpmf(y[n] | lambda_log[n], phi);
+
+    }
+  }
+}
+
+generated quantities {
+
+// ** Estimates for both in- and out-of-sample predictions
+
+ int<lower=0> y_sim[N];
+ int zero_pred;
+ real mu[N];
+
+ int<lower=0> y_sim_out[N_out];
+ int zero_pred_out;
+ real mu_out[N_out];
+
+ mu = exp(lambda_log);
+ mu_out = exp(lambda_log_out);
+
+// ** In sample predictions ** 
+
+ for(n in 1:N) {
+
+ zero_pred    = bernoulli_rng(theta[n]); 
+ y_sim[n]     = (1 - zero_pred) * neg_binomial_2_rng(mu[n], phi);
+
+  }
+
+// ** Out of sample predictions ** 
+
+ for(nn in 1:N_out) {
+
+  zero_pred_out = bernoulli_rng(theta_out[nn]); 
+  y_sim_out[nn] = (1 - zero_pred_out) * neg_binomial_2_rng(mu_out[nn], phi);
+
+  }
+
+}
+"
+```
+
+Set up the data to run the more complicated model: \
+
+```{r}
+
+```
+
+Run the model (only with one chain because it takes forever): \
+
+```{r}
+
+```
+
+Save the diagnostics for shinystan but at least plot some output: \
+
+```{r}
+
+```
+
+
