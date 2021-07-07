@@ -4,6 +4,20 @@
 ##  -- Short-term forecasting (two years out)          ## 
 #########################################################
 
+## Stuff for running from the command line for Sherlock. Comment out change the corresponding
+ ## arguments in the lines below if running on a local computer through R or R studio (works if
+  ## running from the command line) (ctrl + f "args")
+args <- commandArgs(TRUE)
+
+model.form   <- args[1]
+stan.model_which <- args[2]
+nc <- as.numeric(args[3])
+deubg.top_samps  <- as.numeric(args[4])    ## Include the top X municipalities by cases 
+debug.ran_samps  <- as.numeric(args[5])    ## Include Y random municipalities
+nt <- as.numeric(args[6])
+ni <- as.numeric(args[7])
+nb <- as.numeric(args[8])
+
 ####
 ## Model questions that remain unresolved:
 ####
@@ -56,19 +70,35 @@ source("packages_functions.R")  ## Load packages, helper functions, and data
 ####
 
 ## Run a small sample model with only a subset of the data for debugging and development purposes? 
-debug.stan.model <- TRUE  
+debug.stan.model <- FALSE
 ## If TRUE:
-deubg.top_samps  <- 50    ## Include the top X municipalities by cases 
-debug.ran_samps  <- 100   ## Include Y random municipalities
-set.seed(10003)           ## Set a seed to pick these random municipalities for reproducibility
+#deubg.top_samps  <- 50    ## Include the top X municipalities by cases 
+#debug.ran_samps  <- 100   ## Include Y random municipalities
+set.seed(10003)            ## Set a seed to pick these random municipalities for reproducibility
 ## MCMC settings
-ni <- 1500                ## number of iterations per chain. 1500 is what I have been using for debug and development
+#ni <- 1500                ## number of iterations per chain. 1500 is what I have been using for debug and development
                            ## For the final version this should probably be around 12,000
-nt <- 1                   ## thinning (1 = keep all samples). NOTE: there is definitely some auto-correlation in the later models
+#nt <- 1                   ## thinning (1 = keep all samples). NOTE: there is definitely some auto-correlation in the later models
                            ## For the final version this should probably be at least 5
-nb <- 500                 ## burn-in (number of initial samples to throw out)
+#nb <- 500                 ## burn-in (number of initial samples to throw out)
                            ## For the final verison this should probably be about 2000, with nt = 5 and ni = 12,000
-nc <- 1                   ## number of chains (3 or 4 is usually sensible, 1 is ok for quick debugging)
+
+## number of chains (3 or 4 is usually sensible, 1 is ok for quick debugging)
+ ## Set the number of cores to be used to the number of chains. Be careful with this if you are
+  ## running on your local computer!
+if (Sys.getenv('SLURM_JOB_ID') != "") {
+  registerDoParallel(cores = nc)
+  options(mc.cores = nc)
+  forecast.plotting <- FALSE
+} else {
+  nc <- 1                   
+  registerDoParallel(cores = nc)  
+  options(mc.cores = nc)
+  forecast.plotting <- TRUE
+}
+
+print(args)
+print(nc)
 
 ####
 ## Building the model up from from the very basics
@@ -78,7 +108,7 @@ nc <- 1                   ## number of chains (3 or 4 is usually sensible, 1 is 
  ## 1) "construct"    -- early model iterations with few predictors and simple structure
  ## 2) "finalize"     -- more complicated models designed to fit to N - 2 years and predict the last two years of data
  ## 3) "forecast"     -- the most complicated/extensive of the "fit" models expanded to allow forecasting into the future 
-model.form <- "forecast"
+# model.form <- "forecast"
 
 ## NOTE" Each subsequent model incorporates all (or most) of the model additions from the previous model
 
@@ -98,7 +128,7 @@ if (model.form == "construct") {
 # "Simple2_NB.ZI.OoS.T.spline.R" -- ^^ + Allowing the smoothing terms to vary by location in a random-effects form
 
 ## Choose the model to run
-stan.model_which <- "Simple2_NB.ZI.OoS.T.spline.R"
+stan.model_which <- "Simple2_NB.ZI.OoS.T"
 
 ## If true, produce histograms of the predictors
 print.predictors <- FALSE          
@@ -132,6 +162,11 @@ source("VL_stan_finalize.R")
 ## Finally, use the most expansive models from the set above (NB.ZI.C.L and NB.ZI.C.S) to forecast 
 } else if (model.form == "forecast") {
 
+# "NB.ZI.F.L"   -- Forecast with a linear term for year
+# "NB.ZI.F.S"   -- Forecast with a spline term for year
+  
+# stan.model_which <- "NB.ZI.F.S"
+  
 source("VL_stan_data_forecast.R")  
 source("VL_stan_forecast.R")
 

@@ -7,7 +7,8 @@ if (stan.model_which == "NB.ZI.F.L") {
 stan.fit <- stan(
   file    = "stan_models/NB.ZI.F.L.stan"
 , data    = stan.data
-, chains  = 1
+, chains  = nc
+, cores   = nc
 , iter    = ni
 , warmup  = nb
 , thin    = nt
@@ -66,45 +67,48 @@ stan.fit <- stan(
   file    = "stan_models/NB.ZI.F.S.stan"
 , data    = stan.data
 , chains  = 1
+, cores   = 1
 , iter    = ni
 , warmup  = nb
 , thin    = nt
+, refresh = 1
 , init    = list(
    ## With the generated quantities for the out of sample predictions need to 
     ## start the variance terms in a reasonable location
    ## For safety also starting the squared terms at the center of the prior (zero)
   list(
-    reciprocal_phi     = .1
-  , sigma_alpha_lambda = .3
-  , sigma_alpha_theta  = .3
+    reciprocal_phi       = rgamma(1, 2, 10)
+  , sigma_alpha_lambda   = rgamma(1, 2, 10)
+  , sigma_alpha_theta    = rgamma(1, 2, 10)
     
-  , alpha_lambda_bar   = -1
-  , alpha_theta_bar    = 0
+  , alpha_lambda_bar     = rnorm(1, -1, 0.05)
+  , alpha_theta_bar      = rnorm(1, 0, 0.05)
     
-  , gdp_theta_bar      = 0
+  , gdp_theta_bar        = rnorm(1, 0, 0.05)
     
-  , temp_lambda_bar      = 0
-  , temp_lambda_bar_sq   = 0
-  , precip_lambda_bar    = 0
-  , precip_lambda_bar_sq = 0
-  , pop_lambda_bar       = 0
-  , pop_lambda_bar_sq    = 0
-  , area_lambda_bar      = 0
-  , area_lambda_bar_sq   = 0
-  , ag_lambda_bar        = 0
-  , ndvi_lambda_bar      = 0
-  , ndvi_lambda_bar_sq   = 0
+  , temp_lambda_bar      = rnorm(1, 0, 0.05)
+  , temp_lambda_bar_sq   = rnorm(1, 0, 0.05)
+  , precip_lambda_bar    = rnorm(1, 0, 0.05)
+  , precip_lambda_bar_sq = rnorm(1, 0, 0.05)
+  , pop_lambda_bar       = rnorm(1, 0, 0.05)
+  , pop_lambda_bar_sq    = rnorm(1, 0, 0.05)
+  , area_lambda_bar      = rnorm(1, 0, 0.05)
+  , area_lambda_bar_sq   = rnorm(1, 0, 0.05)
+  , ag_lambda_bar        = rnorm(1, 0, 0.05)
+  , ndvi_lambda_bar      = rnorm(1, 0, 0.05)
+  , ndvi_lambda_bar_sq   = rnorm(1, 0, 0.05)
     
-  , eps_alpha_theta    = rep(0, stan.data$N_loc)
-  , eps_alpha_lambda   = rep(0, stan.data$N_loc)
+  , eps_alpha_theta      = rnorm(stan.data$N_loc, 0, 0.05)
+  , eps_alpha_lambda     = rnorm(stan.data$N_loc, 0, 0.05)
     
-  , eps_year_deltas    = matrix(data = 0, nrow = stan.data$N_loc, ncol = stan.data$max_year - 1)
-  , real_deltas_bar    = rep(0, stan.data$max_year)
-  , delta_sigma        = .3
-  , sigma_year_lambda  = .3
+  , eps_year_deltas      = matrix(data = rnorm(stan.data$N_loc, 0, 0.05), nrow = stan.data$N_loc, ncol = stan.data$max_year - 1)
+  , real_deltas_bar      = rnorm(stan.data$max_year, 0, 0.05)
     
-  ))
-, seed    = 1008
+  , delta_sigma          = rgamma(1, 2, 10)
+  , sigma_year_lambda    = rgamma(1, 2, 10)
+  )
+  )
+, seed    = 3333
 ## If issues arise can just give certain parameters for tracking for ease of use with shinystan
 #, pars    = c(
 #  "reciprocal_phi"
@@ -120,10 +124,14 @@ stan.fit <- stan(
     adapt_delta = 0.95
   , max_treedepth = 12
   ))
+
+saveRDS(stan.fit, "stan.fit.NB.ZI.F.S.Rds")
    
 }
 
-launch_shinystan(stan.fit)
+# launch_shinystan(stan.fit)
+
+if (forecast.plotting) {
 
 ########
 ### Explore the fit (in a pretty non-dynamic way -- this will need to be updated to reflect
@@ -195,7 +203,7 @@ stan.fit.summary.coef <- stan.fit.summary.coef %>%
     , "Random intercept variance (count)"
     , "Random intercept variance (prob)"
     , "Random year variance (count)"
-#    , "Random year variance sq (count)"
+#   , "Random year variance sq (count)"
     , "Temperature (mean) (linear)"
     , "Temperature (mean) (sq)"
     , "Year (linear)"
@@ -254,3 +262,8 @@ VL.year %>% filter(munip_name %in% randplotloc) %>%
   , axis.title.y = element_text(size = 12)
   )
   }
+
+}
+
+## stan.fit <- readRDS("fits/stan.fit.NB.ZI.F.S.Rds")
+## launch_shinystan(stan.fit)

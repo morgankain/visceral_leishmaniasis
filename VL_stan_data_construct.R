@@ -93,7 +93,7 @@ lme4.data <- VL.year %>%
   ungroup() %>% 
   mutate(
     year   = c(scale(mean_year, scale = F))
-  , precip = c(scale(mean_precip, scale = F))
-  , temp   = c(scale(mean_temp, scale = F))
-  , pop    = c(scale(mean_pop, scale = F))
-  , gdp    = c(scale(mean_GDP, scale = F)))
+  , precip = c(scale(mean_precip, scale = T))
+  , temp   = c(scale(mean_temp, scale = T))
+  , pop    = c(scale(mean_pop, scale = T))
+  , gdp    = c(scale(mean_GDP, scale = T)))

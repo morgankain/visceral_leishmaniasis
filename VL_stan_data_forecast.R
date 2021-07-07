@@ -17,6 +17,10 @@ rand_locs <- VL %>% group_by(munip_name) %>% summarize(tot_cases = sum(vl_cases)
 rand_locs <- c(rand_locs, top_locs)
 
 VL.temp <- VL %>% filter(munip_name %in% rand_locs)
+} else {
+
+VL.temp <- VL
+  
 }
 
 ### Just listing out what I see as sensible covariates and functional forms for those covaraites
@@ -136,7 +140,8 @@ stan.data <- c(stan.data
   ))
 
 ## Same comment as above --- just wanting to get this up and running
-stan.data$ag_out_sd[which(stan.data$ag_out_sd == 0)] <- 0.1
+stan.data$ag_out_sd[which(stan.data$ag_out_sd == 0)] <- 0.05
+stan.data$precip_out_sd[which(stan.data$precip_out_sd == 0)] <- 0.05
 
 stan.data <- c(stan.data
  , list(
@@ -188,7 +193,8 @@ stan.data <- c(stan.data
     )
   ))
 
-stan.data$ag_out_sd[which(stan.data$ag_out_sd == 0)] <- 0.1
+stan.data$ag_out_sd[which(stan.data$ag_out_sd == 0)] <- 0.05
+stan.data$precip_out_sd[which(stan.data$precip_out_sd == 0)] <- 0.05
 
 stan.data <- c(stan.data
  , list(

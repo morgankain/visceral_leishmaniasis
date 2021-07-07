@@ -307,10 +307,15 @@ stan.fit <- stan(
    ## With the generated quantities for the out of sample predictions need to 
     ## start the variance terms in a reasonable location
   list(
-    reciprocal_phi     = 1
-  , phi                = 1
-  , sigma_alpha_lambda = 1
-  , sigma_year_lambda  = 1
+    reciprocal_phi     = .1
+  , sigma_alpha_lambda = .1
+  , sigma_alpha_theta  = .1
+    
+  , alpha_lambda_bar   = -1
+  , alpha_theta_bar    = 0
+
+  , eps_alpha_lambda   = rep(0, stan.data$N_loc)
+    
   )
 )
 , seed    = 1001
